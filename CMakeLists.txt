@@ -6,5 +6,5 @@ add_compile_options(-g -O3)
 
 add_subdirectory(mockturtle)
 
-add_executable(lbdd main.cpp pla.cpp)
-target_link_libraries(lbdd mockturtle)
+add_executable(bddl main.cpp pla.cpp)
+target_link_libraries(bddl mockturtle)
