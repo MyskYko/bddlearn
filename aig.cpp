@@ -433,7 +433,7 @@ int aigman::newobj(int i, int j) {
   vObjs[nObjs + nObjs] = i;
   vObjs[nObjs + nObjs + 1] = j;
   nGates++;
-  return nObjs++;
+  return nObjs++ << 1;
 }
 
 void aigman::newpo(int i) {
@@ -442,12 +442,12 @@ void aigman::newpo(int i) {
 }
 
 int aigman::newor(int i, int j) {
-  int f = newobj(i ^ 1, j ^ 1) << 1;
+  int f = newobj(i ^ 1, j ^ 1);
   return f ^ 1;
 }
 
 int aigman::newite(int c, int t, int e) {
-  int f1 = newobj(c, t) << 1;
-  int f0 = newobj(c ^ 1, e) << 1;
+  int f1 = newobj(c, t);
+  int f0 = newobj(c ^ 1, e);
   return newor(f1, f0);
 }
