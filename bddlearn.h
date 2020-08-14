@@ -511,47 +511,50 @@ int BddSqueeze( BddMan * p, int l, int u )
 ***********************************************************************/
 int BddDCIntersect( BddMan * p, int af, int ag, int bf, int bg )
 {
+  // terminal (care set)
+  if(ag == 0 && bg == 0) assert(af == bf);
   if(ag == 0) return af;
   if(bg == 0) return bf;
+  // terminal (DC)
+  if(ag == 1 && bg == 1) return 0;
   if(ag == 1) return bf;
   if(bg == 1) return af;
+  // top var
   int var = std::min({BddVar(p, af), BddVar(p, ag), BddVar(p, bf), BddVar(p, bg)});
   int af0, af1, ag0, ag1, bf0, bf1, bg0, bg1;
-  if(var == BddVar(p, af))
-    af0 = BddElse(p, af), af1 = BddThen(p, af);
-  else
-    af0 = af1 = af;
-  if(var == BddVar(p, ag))
-    ag0 = BddElse(p, ag), ag1 = BddThen(p, ag);
-  else
-    ag0 = ag1 = ag;
-  if(var == BddVar(p, bf))
-    bf0 = BddElse(p, bf), bf1 = BddThen(p, bf);
-  else
-    bf0 = bf1 = bf;
-  if(var == BddVar(p, bg))
-    bg0 = BddElse(p, bg), bg1 = BddThen(p, bg);
-  else
-    bg0 = bg1 = bg;
+  if(var == BddVar(p, af)) af0 = BddElse(p, af), af1 = BddThen(p, af);
+  else af0 = af1 = af;
+  if(var == BddVar(p, ag)) ag0 = BddElse(p, ag), ag1 = BddThen(p, ag);
+  else ag0 = ag1 = ag;
+  if(var == BddVar(p, bf)) bf0 = BddElse(p, bf), bf1 = BddThen(p, bf);
+  else bf0 = bf1 = bf;
+  if(var == BddVar(p, bg)) bg0 = BddElse(p, bg), bg1 = BddThen(p, bg);
+  else bg0 = bg1 = bg;
+  // only one case is cared
   if(ag0 == 1 && bg0 == 1)
     return BddDCIntersect(p, af1, ag1, bf1, bg1);
   if(ag1 == 1 && bg1 == 1)
     return BddDCIntersect(p, af0, ag0, bf0, bg0);
+  // recurse for each case
   int r0, r1;
   r0 = BddDCIntersect(p, af0, ag0, bf0, bg0);
   r1 = BddDCIntersect(p, af1, ag1, bf1, bg1);
+  // compute DC set for each case
   int rg0, rg1;
   rg0 = BddAnd(p, ag0, bg0);
   rg1 = BddAnd(p, ag1, bg1);
+  // check if intersection exists
   int f, g;
   f = BddXor(p, r0, r1);
   g = BddOr(p, rg0, rg1);
+  // then, recurse for small intersection
   if(BddOr(p, LitNot(f), g) == 1)
     return BddDCIntersect(p, r0, rg0, r1, rg1);
   if(BddOr(p, f, g) == 1) {
     int r = BddDCIntersect(p, LitNot(r0), rg0, r1, rg1);
     return BddUniqueCreate( p, var, r, LitNot(r) );
   }
+  // else, return with a new node
   return BddUniqueCreate( p, var, r1, r0 );  
 }
 
@@ -588,18 +591,16 @@ void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynam
   std::cout << "onset : " << BddCountNodes(p, onset) << std::endl;
   std::cout << "offset : " << BddCountNodes(p, offset) << std::endl;
 
-  //int careset = BddOr(p, onset, offset);
-  //int x = BddRestrict(p, onset, careset);
-  
-  //int y = BddSqueeze(p, onset, LitNot(offset));
-  //std::cout << "squeeze : " << BddCountNodes(p, y) << std::endl;
+  /*
+  int y = BddSqueeze(p, onset, LitNot(offset));
+  std::cout << "squeeze : " << BddCountNodes(p, y) << std::endl;
+  mockturtle::klut_network ntk;
+  GenNtk( p, ntk, y );
+  mockturtle::write_blif(ntk, blifname);
+  */
 
-  //uint x = BddMinimize2(p, onset, offset);
-  
   int x = BddDCIntersect(p, onset, LitNot(onset), LitNot(offset), LitNot(offset));
-  
   std::cout << "dcinter : " << BddCountNodes(p, x) << std::endl;
-
   mockturtle::klut_network ntk;
   GenNtk( p, ntk, x );
   mockturtle::write_blif(ntk, blifname);
