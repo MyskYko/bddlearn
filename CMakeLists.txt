@@ -4,7 +4,4 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options(-g -O3)
 
-add_subdirectory(mockturtle)
-
-add_executable(bddl main.cpp pla.cpp)
-target_link_libraries(bddl mockturtle)
+add_executable(bddl main.cpp pla.cpp aig.cpp)

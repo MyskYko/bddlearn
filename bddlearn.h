@@ -5,8 +5,9 @@
 #include <cassert>
 #include <string>
 #include <vector>
+#include <map>
 #include <boost/dynamic_bitset.hpp>
-#include <mockturtle/mockturtle.hpp>
+#include "aig.hpp"
 
 typedef struct BddMan_ BddMan;
 struct BddMan_ 
@@ -296,42 +297,39 @@ void BddPrintTest( BddMan * p )
 }
 
 /**Function*************************************************************
-  Synopsis    [bdd2ntk]
+  Synopsis    [bdd2aig]
   Description []
                
   SideEffects []
   SeeAlso     []
 ***********************************************************************/
-template <typename Ntk>
-auto GenNtk_rec(BddMan * man, Ntk & ntk, std::map<int, typename Ntk::signal> & m, int x) {
+int GenAig_rec(BddMan * man, aigman * aig, std::map<int, int> & m, int x) {
   if ( x == 0 ) {
-    return ntk.get_constant( 0 );
+    return 0;
   }
   if ( x == 1 ) {
-    return ntk.get_constant( 1 );
+    return 1;
   }
   if ( LitIsCompl(x) ) {
-    return ntk.create_not( GenNtk_rec( man, ntk, m, LitNot(x) ) );
+    return GenAig_rec( man, aig, m, LitNot(x) ) ^ 1;
   }
   if ( m.count( x ) ) {
     return m[x];
   }
-  auto c = ntk.make_signal( ntk.pi_at( BddVar( man, x ) ) );
-  auto f1 = GenNtk_rec( man, ntk, m, BddThen( man, x ) );
-  auto f0 = GenNtk_rec( man, ntk, m, BddElse( man, x ) );
-  auto f = ntk.create_ite( c, f1, f0 );
+  int c = (BddVar( man, x ) + 1) << 1;
+  int f1 = GenAig_rec( man, aig, m, BddThen( man, x ) );
+  int f0 = GenAig_rec( man, aig, m, BddElse( man, x ) );
+  int f = aig->newite( c, f1, f0 );
   m[x] = f;
   return f;
 }
 
-template <typename Ntk>
-void GenNtk(BddMan * man, Ntk & ntk, int x) {
-  for ( int i = 0; i < man->nVars; i++ ) {
-    ntk.create_pi();
-  }
-  std::map<int, typename Ntk::signal> m;
-  auto f = GenNtk_rec( man, ntk, m, x );
-  ntk.create_po( f );
+aigman *GenAig(BddMan * man, int x) {
+  aigman *p = new aigman( man->nVars );
+  std::map<int, int> m;
+  int f = GenAig_rec( man, p, m, x );
+  p->newpo(f);
+  return p;
 }
 
 /**Function*************************************************************
@@ -565,7 +563,7 @@ int BddDCIntersect( BddMan * p, int af, int ag, int bf, int bg )
   SideEffects []
   SeeAlso     []
 ***********************************************************************/
-void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynamic_bitset<> const & output, std::string blifname) {
+void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynamic_bitset<> const & output, std::string aigname) {
   int ninputs = inputs.size();
   BddMan * p = BddManAlloc(ninputs, 25);
   int onset = 0;
@@ -591,19 +589,20 @@ void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynam
   std::cout << "onset : " << BddCountNodes(p, onset) << std::endl;
   std::cout << "offset : " << BddCountNodes(p, offset) << std::endl;
 
+  aigman * aig;
+  
   /*
   int y = BddSqueeze(p, onset, LitNot(offset));
   std::cout << "squeeze : " << BddCountNodes(p, y) << std::endl;
-  mockturtle::klut_network ntk;
-  GenNtk( p, ntk, y );
-  mockturtle::write_blif(ntk, blifname);
+  aig = GenAig( p, y );
   */
 
   int x = BddDCIntersect(p, onset, LitNot(onset), LitNot(offset), LitNot(offset));
   std::cout << "dcinter : " << BddCountNodes(p, x) << std::endl;
-  mockturtle::klut_network ntk;
-  GenNtk( p, ntk, x );
-  mockturtle::write_blif(ntk, blifname);
+  aig = GenAig( p, x );
+  
+  aig->write(aigname);
 
+  delete aig;
   BddManFree(p);
 }
