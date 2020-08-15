@@ -249,6 +249,48 @@ int BddCountNodesArray2( BddMan * p, Vec_Int_t * vNodes )
 }
 */
 
+/**Function*************************************************************
+  Synopsis    [Count ones]
+  Description []
+               
+  SideEffects []
+  SeeAlso     []
+***********************************************************************/
+int BddCountOnes_rec(BddMan * p, int x, std::string & s) {
+  if(x == 1)
+    {
+      int idx = 0;
+      for(int i = 0; i < s.size(); i++)
+	if(s[i] == '-')
+	  idx++;
+      return 1 << idx;
+    }
+  if(x == 0)
+    return 0;
+  int count = 0;
+  s[BddVar(p, x)] = '1';
+  count += BddCountOnes_rec(p, BddThen(p, x), s);
+  s[BddVar(p, x)] = '0';
+  count += BddCountOnes_rec(p, BddElse(p, x), s);
+  s[BddVar(p, x)] = '-';
+  return count;
+}
+int BddCountOnes(BddMan * p, int x) {
+  std::string s;
+  for(int i = 0; i < p->nVars; i++) {
+    s += "-";
+  }
+  return BddCountOnes_rec(p, x, s);
+}
+
+double BddRatioOnes(BddMan * p, int x) {
+  if(x == 1) return 1;
+  if(x == 0) return 0;
+  double count = 0;
+  count += BddRatioOnes(p, BddThen(p, x));
+  count += BddRatioOnes(p, BddElse(p, x));
+  return count / 2;
+}
 
 /**Function*************************************************************
   Synopsis    [Printing BDD.]
