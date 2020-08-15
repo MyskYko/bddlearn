@@ -398,7 +398,7 @@ int BddRestrict( BddMan * p, int f, int c )
     else
         r0 = BddRestrict( p, BddElse(p, f), BddElse(p, c) ),
         r1 = BddRestrict( p, BddThen(p, f), BddThen(p, c) );
-    return BddUniqueCreate( p, std::min(BddVar(p, f), BddVar(p, c)), r1, r0 );
+    return BddUniqueCreate( p, BddVar(p, f), r1, r0 );
 }
 
 /**Function*************************************************************
