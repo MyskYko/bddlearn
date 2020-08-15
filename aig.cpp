@@ -160,38 +160,48 @@ void aigman::simulate(std::vector<int> const & inputs) {
     vValues[i] = getvalue(vObjs[i + i]) & getvalue(vObjs[i + i + 1]);
   }
 }
-double aigman::eval(std::vector<boost::dynamic_bitset<> > const & inputs, std::vector<boost::dynamic_bitset<> > const & outputs) {
+void aigman::simulate(std::vector<boost::dynamic_bitset<> > const & inputs, std::vector<boost::dynamic_bitset<> > & outputs) {
   assert(nPis == inputs.size());
-  assert(nPos == outputs.size());
-  int count = 0;
-  for(int i = 0; i < (inputs[0].size() - 1) / 32 + 1; i++) {
+  int npats = inputs[0].size();
+  outputs.clear();
+  outputs.resize(nPos);
+  for(int i = 0; i < nPos; i++) {
+    outputs[i].resize(npats);
+  }
+  for(int i = 0; i < (npats - 1) / 32 + 1; i++) {
     std::vector<int> inputs_int(nPis);
     for(int j = 0; j < nPis; j++) {
       int input = 0;
-      for(int k = 0; k < 32 && k + i * 32 < inputs[0].size(); k++) {
+      for(int k = 0; k < 32 && k + i * 32 < npats; k++) {
 	input += inputs[j][k + i * 32] << k;
       }
       inputs_int[j] = input;
     }
     simulate(inputs_int);
 
-    std::bitset<32> correct = 0;
-    for(int k = 0; k < 32 && k + i * 32 < inputs[0].size(); k++) {
-      correct[k] = 1;
-    }
     for(int j = 0; j < nPos; j++) {
       int tmp = getvalue(vPos[j]);
-      for(int k = 0; k < 32 && k + i * 32 < inputs[0].size(); k++) {
-	if(correct[k] && outputs[j][k + i * 32] != (tmp & 1)) {
-	  correct[k] = 0;
-	}
+      for(int k = 0; k < 32 && k + i * 32 < npats; k++) {
+	outputs[j][k + i * 32] = tmp & 1;
 	tmp = tmp >> 1;
       }
     }
-    count += correct.count();
   }
-
-  return (double)count / inputs[0].size();
+}
+double aigman::eval(std::vector<boost::dynamic_bitset<> > const & inputs, std::vector<boost::dynamic_bitset<> > const & outputs) {
+  assert(nPis == inputs.size());
+  assert(nPos == outputs.size());
+  int npats = inputs[0].size();
+  std::vector<boost::dynamic_bitset<> > outputs2;
+  simulate(inputs, outputs2);
+  boost::dynamic_bitset<> neq(npats);
+  for(int j = 0; j < nPos; j++) {
+    for(int i = 0; i < npats; i++) {
+      if(neq[i]) continue;
+      if(outputs[j][i] != outputs2[j][i]) neq[i] = 1;
+    }
+  }
+  return (double)neq.count() / npats;
 }
 
 void aigman::supportfanouts_rec(int i) {

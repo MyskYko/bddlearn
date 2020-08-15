@@ -61,6 +61,7 @@ public:
   
   int getvalue(int i);
   void simulate(std::vector<int> const & inputs);
+  void simulate(std::vector<boost::dynamic_bitset<> > const & inputs, std::vector<boost::dynamic_bitset<> > & outputs);
   double eval(std::vector<boost::dynamic_bitset<> > const & inputs, std::vector<boost::dynamic_bitset<> > const & outputs);
   double eval(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynamic_bitset<> const & output) { std::vector<boost::dynamic_bitset<> > outputs = {output}; return eval(inputs, outputs); }
 
