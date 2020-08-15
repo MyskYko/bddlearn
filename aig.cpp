@@ -490,3 +490,18 @@ int aigman::newite(int c, int t, int e) {
   int f0 = newobj(c ^ 1, e);
   return newor(f1, f0);
 }
+
+void aigman::swappis(int i, int j) {
+  int pi0 = (i + 1) << 1;
+  int pi1 = (j + 1) << 1;
+  for(int k = nPis + nLats + 1; k < nObjs; k++) {
+    for(int l = k + k; l <= k + k + 1; l++) {
+      if(vObjs[l] == pi0) vObjs[l] = pi1;
+      else if(vObjs[l] == pi1) vObjs[l] = pi0;
+      else if(vObjs[l] == (pi0 ^ 1)) vObjs[l] = pi1 ^ 1;
+      else if(vObjs[l] == (pi1 ^ 1)) vObjs[l] = pi0 ^ 1;
+    }
+  }
+  if(!vvFanouts.empty()) std::swap(vvFanouts[i + 1], vvFanouts[j + 1]);
+  if(!vLevels.empty()) std::swap(vLevels[i + 1], vLevels[j + 1]);
+}

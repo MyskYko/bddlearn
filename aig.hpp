@@ -82,4 +82,6 @@ public:
 
   int newor(int i, int j);
   int newite(int c, int t, int e);
+
+  void swappis(int i, int j);
 };
