@@ -721,7 +721,7 @@ void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & t
     c[i] = i + 1;
   }
   // compare one (const)
-  for(int i = 0; i < ts.size() - 1; i++) {
+  for(int i = 0; i < ts.size(); i++) {
     if(BddOr(p, ts[i].first, ts[i].second) == 1) {
       ts[i].first = 1;
       c[i] = 0;
