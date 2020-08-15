@@ -142,7 +142,7 @@ BddMan * BddManAlloc( int nVars, int nPowTwo )
 }
 void BddManFree( BddMan * p )
 {
-    printf( "BDD stats: Var = %d  Obj = %d  Alloc = %d  Hit = %d  Miss = %d  ", 
+    printf( "BDD stats: Var = %d  Obj = %d  Alloc = %d  Hit = %d  Miss = %d\n", 
         p->nVars, p->nObjs, p->nObjsAlloc, p->nCacheLookups-p->nCacheMisses, p->nCacheMisses );
     free( p->pUnique );
     free( p->pNexts );
