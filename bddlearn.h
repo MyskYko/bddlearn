@@ -563,6 +563,36 @@ int BddDCIntersect( BddMan * p, int af, int ag, int bf, int bg )
   SideEffects []
   SeeAlso     []
 ***********************************************************************/
+bool BddCheckIntersect( BddMan * p, int af, int ag, int bf, int bg ) {
+  // terminal (care set)
+  if(ag == 0 && bg == 0) return af == bf;
+  // terminal (DC)
+  assert(!(ag == 1 && bg == 1));
+  if(ag == 1) return 1;
+  if(bg == 1) return 1;
+  // top var
+  int var = std::min({BddVar(p, af), BddVar(p, ag), BddVar(p, bf), BddVar(p, bg)});
+  int af0, af1, ag0, ag1, bf0, bf1, bg0, bg1;
+  if(var == BddVar(p, af)) af0 = BddElse(p, af), af1 = BddThen(p, af);
+  else af0 = af1 = af;
+  if(var == BddVar(p, ag)) ag0 = BddElse(p, ag), ag1 = BddThen(p, ag);
+  else ag0 = ag1 = ag;
+  if(var == BddVar(p, bf)) bf0 = BddElse(p, bf), bf1 = BddThen(p, bf);
+  else bf0 = bf1 = bf;
+  if(var == BddVar(p, bg)) bg0 = BddElse(p, bg), bg1 = BddThen(p, bg);
+  else bg0 = bg1 = bg;
+  // only one case is cared
+  if(ag0 == 1 && bg0 == 1)
+    return BddCheckIntersect(p, af1, ag1, bf1, bg1);
+  if(ag1 == 1 && bg1 == 1)
+    return BddCheckIntersect(p, af0, ag0, bf0, bg0);
+  // recurse for each case
+  bool r0, r1;
+  r0 = BddCheckIntersect(p, af0, ag0, bf0, bg0);
+  if(!r0) return 0;
+  r1 = BddCheckIntersect(p, af1, ag1, bf1, bg1);
+  return r0 && r1;
+}
 int BddDCIntersect2( BddMan * p, int af, int ag, int bf, int bg )
 {
   // terminal (care set)
@@ -586,13 +616,13 @@ int BddDCIntersect2( BddMan * p, int af, int ag, int bf, int bg )
   else bg0 = bg1 = bg;
   // only one case is cared
   if(ag0 == 1 && bg0 == 1)
-    return BddDCIntersect(p, af1, ag1, bf1, bg1);
+    return BddDCIntersect2(p, af1, ag1, bf1, bg1);
   if(ag1 == 1 && bg1 == 1)
-    return BddDCIntersect(p, af0, ag0, bf0, bg0);
+    return BddDCIntersect2(p, af0, ag0, bf0, bg0);
   // recurse for each case
   int r0, r1;
-  r0 = BddDCIntersect(p, af0, ag0, bf0, bg0);
-  r1 = BddDCIntersect(p, af1, ag1, bf1, bg1);
+  r0 = BddDCIntersect2(p, af0, ag0, bf0, bg0);
+  r1 = BddDCIntersect2(p, af1, ag1, bf1, bg1);
   return BddUniqueCreate( p, var, r1, r0 );  
 }
 int BddMinimize3( BddMan * p, int f, int g )
@@ -614,15 +644,12 @@ int BddMinimize3( BddMan * p, int f, int g )
     return BddMinimize3(p, f0, g0);
   // check if intersection exists
   if(f0 != f1) {
-    int rf, rg;
-    rf = BddXor(p, f0, f1);
-    rg = BddOr(p, g0, g1);
-    if(BddOr(p, LitNot(rf), rg) == 1) {
+    if(BddCheckIntersect(p, f0, g0, f1, g1)) {
       int f2 = BddDCIntersect2( p, f0, g0, f1, g1 );
       int g2 = BddAnd( p, g0, g1 );
       return BddMinimize3( p, f2, g2 );
     }
-    if(BddOr(p, rf, rg) == 1) {
+    if(BddCheckIntersect(p, LitNot(f0), g0, f1, g1)) {
       int f2 = BddDCIntersect2( p, LitNot(f0), g0, f1, g1 );
       int g2 = BddAnd( p, g0, g1 );
       int r = BddMinimize3( p, f2, g2 );
