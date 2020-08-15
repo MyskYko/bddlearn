@@ -25,8 +25,8 @@ public:
 
   std::vector<aigman> backup;
   
-  aigman() {};
-  aigman(int nPis, int nLats = 0) : nPis(nPis), nLats(nLats) {
+  aigman() : nPis(0), nPos(0), nLats(0), nGates(0), nObjs(1) {};
+  aigman(int nPis, int nLats = 0) : nPis(nPis), nPos(0), nLats(nLats), nGates(0) {
     nObjs = nPis + nLats + 1;
   };
 

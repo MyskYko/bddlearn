@@ -461,6 +461,8 @@ void aigman::markfocone_rec(int i) {
 }
 
 int aigman::newobj(int i, int j) {
+  assert((i >> 1) < nObjs);
+  assert((j >> 1) < nObjs);
   if(i == 0) return 0;
   if(j == 0) return 0;
   if(i == 1) return j;
