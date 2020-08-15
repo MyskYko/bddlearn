@@ -668,7 +668,7 @@ int BddDCIntersect2( BddMan * p, int af, int ag, int bf, int bg )
   r1 = BddDCIntersect2(p, af1, ag1, bf1, bg1);
   return BddUniqueCreate( p, var, r1, r0 );  
 }
-int BddMinimize3( BddMan * p, int f, int g )
+int BddMinimize3( BddMan * p, int f, int g, bool finter = 1 )
 {
   // terminal (care set)
   if(g == 0) return f;
@@ -682,27 +682,29 @@ int BddMinimize3( BddMan * p, int f, int g )
   else g0 = g1 = g;
   // only one case is cared
   if(g0 == 1)
-    return BddMinimize3(p, f1, g1);
+    return BddMinimize3(p, f1, g1, finter);
   if(g1 == 1)
-    return BddMinimize3(p, f0, g0);
+    return BddMinimize3(p, f0, g0, finter);
   // check if intersection exists
-  if(f0 != f1) {
-    if(BddCheckIntersect(p, f0, g0, f1, g1)) {
-      int f2 = BddDCIntersect2( p, f0, g0, f1, g1 );
-      int g2 = BddAnd( p, g0, g1 );
-      return BddMinimize3( p, f2, g2 );
-    }
-    if(BddCheckIntersect(p, LitNot(f0), g0, f1, g1)) {
-      int f2 = BddDCIntersect2( p, LitNot(f0), g0, f1, g1 );
-      int g2 = BddAnd( p, g0, g1 );
-      int r = BddMinimize3( p, f2, g2 );
-      return BddUniqueCreate( p, var, r, LitNot(r) );      
+  if(finter) {
+    if(f0 != f1) {
+      if(BddCheckIntersect(p, f0, g0, f1, g1)) {
+	int f2 = BddDCIntersect2( p, f0, g0, f1, g1 );
+	int g2 = BddAnd( p, g0, g1 );
+	return BddMinimize3( p, f2, g2, finter );
+      }
+      if(BddCheckIntersect(p, LitNot(f0), g0, f1, g1)) {
+	int f2 = BddDCIntersect2( p, LitNot(f0), g0, f1, g1 );
+	int g2 = BddAnd( p, g0, g1 );
+	int r = BddMinimize3( p, f2, g2, finter );
+	return BddUniqueCreate( p, var, r, LitNot(r) );      
+      }
     }
   }
   // recurse for each case
   int r0, r1;
-  r0 = BddMinimize3(p, f0, g0);
-  r1 = BddMinimize3(p, f1, g1);
+  r0 = BddMinimize3(p, f0, g0, finter);
+  r1 = BddMinimize3(p, f1, g1, finter);
   return BddUniqueCreate( p, var, r1, r0 );
 }
 /**Function*************************************************************
