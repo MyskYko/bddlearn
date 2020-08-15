@@ -391,22 +391,16 @@ void aigman::replacenode(int i, int j, bool prop) {
   }
 }
 
-aigman * aigman::copy() {
-  aigman * p = new aigman(nPis, nLats);
-  *p = *this;
-  return p;
-}
 void aigman::save(int i) {
   if(backup.size() <= i) {
     backup.resize(i + 1);
   }
-  backup[i] = copy();
+  backup[i] = *this;
 }
 
 void aigman::load(int i) {
   assert(backup.size() > i);
-  aigman * p = backup[i];
-  *this = *p;
+  *this = backup[i];
 }
 
 void aigman::markfocone_rec(int i) {

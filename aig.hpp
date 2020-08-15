@@ -22,19 +22,17 @@ public:
   std::vector<std::vector<int> > vvFanouts;
   std::vector<int> vLevels;
 
-  std::vector<aigman *> backup;
-
+  std::vector<aigman> backup;
+  
+  aigman() {};
   aigman(int nPis, int nLats = 0) : nPis(nPis), nLats(nLats) {
     nObjs = nPis + nLats + 1;
   };
-  ~aigman() {
-    for(auto p : backup) delete p;
-  }
 
   aigman &operator=(const aigman & x) {
-    assert(nPis == x.nPis);
-    assert(nLats == x.nLats);
+    nPis == x.nPis;
     nPos = x.nPos;
+    nLats == x.nLats;
     nGates = x.nGates;
     nObjs = x.nObjs;
     vPos = x.vPos;
@@ -72,7 +70,6 @@ public:
 
   void markfocone_rec(int i);
 
-  aigman * copy();
   void save(int i = 0);
   void load(int i = 0);
 
