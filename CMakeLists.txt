@@ -6,3 +6,4 @@ add_compile_options(-g -O3)
 
 add_executable(bddl main.cpp pla.cpp aig.cpp)
 add_executable(sim main2.cpp pla.cpp aig.cpp)
+add_executable(orpi main3.cpp aig.cpp)
