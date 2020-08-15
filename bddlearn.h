@@ -676,24 +676,39 @@ void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & t
   for(int i = 0; i < ts.size(); i++) {
     c[i] = i + 1;
   }
-  // compare two
+  // compare one (const)
+  for(int i = 0; i < ts.size() - 1; i++) {
+    if(BddOr(p, ts[i].first, ts[i].second) == 1) {
+      ts[i].first = 1;
+      c[i] = 0;
+      continue;
+    }
+    if(BddOr(p, LitNot(ts[i].first), ts[i].second) == 1) {
+      ts[i].first = 0;
+      c[i] = 0;
+      continue;
+    }
+  }
+  // compare two (intersect)
   for(int i = 0; i < ts.size() - 1; i++) {
     if(abs(c[i]) <= i) continue;
     for(int j = i + 1; j < ts.size(); j++) {
       if(abs(c[j]) <= j) continue;
-      if(BddCheckIntersect(p, ts[i].first, ts[i].second, ts[j].first, ts[j].second)) {
-	int f2 = BddDCIntersect2( p, ts[i].first, ts[i].second, ts[j].first, ts[j].second );
-	int g2 = BddAnd( p, ts[i].second, ts[j].second );
-	ts[i].first = f2;
-	ts[i].second = g2;
-	c[j] = i + 1;
-      }
       if(BddCheckIntersect(p, ts[i].first, ts[i].second, LitNot(ts[j].first), ts[j].second)) {
 	int f2 = BddDCIntersect2( p, ts[i].first, ts[i].second, LitNot(ts[j].first), ts[j].second );
 	int g2 = BddAnd( p, ts[i].second, ts[j].second );
 	ts[i].first = f2;
 	ts[i].second = g2;
 	c[j] = -(i + 1);
+	continue;
+      }
+      if(BddCheckIntersect(p, ts[i].first, ts[i].second, ts[j].first, ts[j].second)) {
+	int f2 = BddDCIntersect2( p, ts[i].first, ts[i].second, ts[j].first, ts[j].second );
+	int g2 = BddAnd( p, ts[i].second, ts[j].second );
+	ts[i].first = f2;
+	ts[i].second = g2;
+	c[j] = i + 1;
+	continue;
       }
     }
   }
@@ -706,6 +721,9 @@ void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & t
       }
       tsnew.push_back(ts[i]);
     }
+    else if(c[i] == 0) {
+      m[tsold[i]] = std::make_pair(ts[i], 0);
+    }
     else {
       m[tsold[i]] = std::make_pair(ts[abs(c[i]) - 1], c[i] < 0);
     }
@@ -715,6 +733,7 @@ void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & t
 int BddBreadthMinimize( BddMan * p, int f, int g ) {
   std::set<std::pair<int, int> > fronts;
   std::map<std::pair<int, int>, std::pair<std::pair<int, int>, bool> > m;
+  std::map<std::pair<int, int>, std::pair<std::pair<int, int>, std::pair<int, int> > > cs;
   std::vector<std::pair<int, int> > res;
   std::pair<int, int> root(f, g);
   fronts.insert(root);
@@ -737,7 +756,7 @@ int BddBreadthMinimize( BddMan * p, int f, int g ) {
     // add children to fronts, add targets to res
     for(auto t : targets) {
       assert(t.second != 1);
-      if(t.second == 0 && (t.first == 0 || t.first == 1)) continue;
+      assert(t.first != 0 && t.first != 1);
       int t0f, t0g, t1f, t1g;
       if(BddVar(p, t.first) == i) t0f = BddElse(p, t.first), t1f = BddThen(p, t.first);
       else t0f = t1f = t.first;
@@ -746,11 +765,10 @@ int BddBreadthMinimize( BddMan * p, int f, int g ) {
       std::pair<int, int> t0, t1;
       t0 = std::make_pair(t0f, t0g);
       t1 = std::make_pair(t1f, t1g);
+      cs[t] = std::make_pair(t0, t1);
       assert(t0g != 1 || t1g != 1);
-      if(t0g != 1 && !(t0g == 0 && (t0f == 0 || t0f == 1)))
-	fronts.insert(t0);
-      if(t1g != 1 && !(t1g == 0 && (t1f == 0 || t1f == 1)))
-	fronts.insert(t1);
+      if(t0g != 1) fronts.insert(t0);
+      if(t1g != 1) fronts.insert(t1);
       res.push_back(t);
     }
   }
@@ -759,20 +777,14 @@ int BddBreadthMinimize( BddMan * p, int f, int g ) {
   for(auto t : res) {
     // get previous children
     int i = std::min(BddVar(p, t.first), BddVar(p, t.second));
-    int t0f, t0g, t1f, t1g;
-    if(BddVar(p, t.first) == i) t0f = BddElse(p, t.first), t1f = BddThen(p, t.first);
-    else t0f = t1f = t.first;
-    if(BddVar(p, t.second) == i) t0g = BddElse(p, t.second), t1g = BddThen(p, t.second);
-    else t0g = t1g = t.second;
     std::pair<int, int> t0, t1;
-    t0 = std::make_pair(t0f, t0g);
-    t1 = std::make_pair(t1f, t1g);
-    assert(t0g != 1 || t1g != 1);
-    if(t0g == 1) {
+    t0 = cs[t].first;
+    t1 = cs[t].second;
+    if(t0.second == 1) {
       m[t] = std::make_pair(t1, 0);
       continue;
     }
-    if(t1g == 1) {
+    if(t1.second == 1) {
       m[t] = std::make_pair(t0, 0);
       continue;
     }
@@ -807,6 +819,98 @@ int BddBreadthMinimize( BddMan * p, int f, int g ) {
   }
   if(m.count(root)) return LitNotCond(m[root].first.first, m[root].second);
   return root.first;
+}
+int BddBreadthMinimize2( BddMan * p, int f, int g ) {
+  std::vector<std::pair<int, int> > targets;
+  std::vector<std::vector<std::pair<int, int> > > nodes(p->nVars);
+  std::map<std::pair<int, int>, std::pair<std::pair<int, int>, bool> > m;
+  std::map<std::pair<int, int>, std::pair<std::pair<int, int>, std::pair<int, int> > > cs;
+  std::pair<int, int> root(f, g);
+  targets.push_back(root);
+  // get nodes in each level
+  for(int i = 0; i < targets.size(); i++) {
+    auto t = targets[i];
+    if(t.second == 1) continue;
+    if(t.first == 0 || t.first == 1) continue;
+    //std::cout << t.first << "," << t.second << std::endl;
+    int var = std::min(BddVar(p, t.first), BddVar(p, t.second));
+    nodes[var].push_back(t);
+    int t0f, t0g, t1f, t1g;
+    if(BddVar(p, t.first) == var) t0f = BddElse(p, t.first), t1f = BddThen(p, t.first);
+    else t0f = t1f = t.first;
+    if(BddVar(p, t.second) == var) t0g = BddElse(p, t.second), t1g = BddThen(p, t.second);
+    else t0g = t1g = t.second;
+    //std::cout << t0f << "," << t0g << " " << t1f << "," << t1g << std::endl;
+    std::pair<int, int> t0, t1;
+    t0 = std::make_pair(t0f, t0g);
+    t1 = std::make_pair(t1f, t1g);
+    cs[t] = std::make_pair(t0, t1);
+    targets.push_back(t0);
+    targets.push_back(t1);
+  }
+  // minimize each level
+  for(int var = p->nVars - 1; var >= 0; var--) {
+    // build current nodes
+    std::set<std::pair<int, int> > s;
+    for(auto t : nodes[var]) {
+      std::pair<int, int> t0, t1;
+      t0 = cs[t].first;
+      t1 = cs[t].second;
+      // no change
+      if(!m.count(t0) && !m.count(t1)) {
+	s.insert(t);
+	continue;
+      }
+      // get new children
+      int c0 = 0, c1 = 0;
+      while(m.count(t0)) {
+	if(t0 == m[t0].first) {
+	  assert(!m[t0].second);
+	  break;
+	}
+	c0 ^= m[t0].second;
+	t0 = m[t0].first;
+      }
+      t0.first = LitNotCond(t0.first, c0);
+      while(m.count(t1)) {
+	if(t1 == m[t1].first) {
+	  assert(!m[t1].second);
+	  break;
+	}
+	c1 ^= m[t1].second;
+	t1 = m[t1].first;
+      }
+      t1.first = LitNotCond(t1.first, c1);
+      // create new node
+      int tf, tg;
+      if(t0.first == t1.first) tf = t0.first;
+      else tf = BddUniqueCreate(p, var, t1.first, t0.first);
+      if(t0.second == t1.second) tg = t0.second;
+      else tg = BddUniqueCreate(p, var, t1.second, t0.second);
+      m[t] = std::make_pair(std::make_pair(tf, tg), 0);
+      s.insert(m[t].first);
+    }
+    std::cout << "lev " << var << " num " << s.size() << std::endl;
+    // minimize the level
+    targets.clear();
+    for(auto t : s) {
+      targets.push_back(t);
+    }
+    if(targets.size() > 1) {
+      BddBreadthMinimize_level(p, targets, m);
+    }
+  }
+  // get new root
+  int c = 0;
+  while(m.count(root)) {
+    if(root == m[root].first) {
+      assert(!m[root].second);
+      break;
+    }
+    c ^= m[root].second;
+    root = m[root].first;
+  }
+  return LitNotCond(root.first, c);
 }
 
 /**Function*************************************************************
@@ -857,6 +961,7 @@ void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynam
   int x = BddMinimize3(p, onset, LitNot(careset));
   std::cout << "minimize : " << BddCountNodes(p, x) << std::endl;
   */
+
   int x = BddBreadthMinimize(p, onset, LitNot(careset));
   std::cout << "bmin : " << BddCountNodes(p, x) << std::endl;
   
