@@ -1,6 +1,7 @@
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+#include <bitset>
 #include <cassert>
 
 #include "aig.hpp"
@@ -96,11 +97,12 @@ int aigman::renumber_rec(int i, std::vector<int> & vObjsNew, int & nObjsNew) {
   if(vValues[i]) return vValues[i];
   int l = renumber_rec(vObjs[i + i] >> 1, vObjsNew, nObjsNew);
   int r = renumber_rec(vObjs[i + i + 1] >> 1, vObjsNew, nObjsNew);
+  l = (l << 1) + (vObjs[i + i] & 1);
+  r = (r << 1) + (vObjs[i + i + 1] & 1);
   if(l < r) std::swap(l, r);
-  vObjsNew[nObjsNew + nObjsNew] = (l << 1) + (vObjs[i + i] & 1);
-  vObjsNew[nObjsNew + nObjsNew + 1] = (r << 1) + (vObjs[i + i + 1] & 1);
-  vValues[i] = nObjsNew++;
-  return vValues[i];
+  vObjsNew[nObjsNew + nObjsNew] = l;
+  vObjsNew[nObjsNew + nObjsNew + 1] = r;
+  return vValues[i] = nObjsNew++;
 }
 
 void aigman::renumber() {
@@ -157,6 +159,39 @@ void aigman::simulate(std::vector<int> const & inputs) {
   for(int i = nPis + nLats + 1; i < nObjs; i++) {
     vValues[i] = getvalue(vObjs[i + i]) & getvalue(vObjs[i + i + 1]);
   }
+}
+double aigman::eval(std::vector<boost::dynamic_bitset<> > const & inputs, std::vector<boost::dynamic_bitset<> > const & outputs) {
+  assert(nPis == inputs.size());
+  assert(nPos == outputs.size());
+  int count = 0;
+  for(int i = 0; i < (inputs[0].size() - 1) / 32 + 1; i++) {
+    std::vector<int> inputs_int(nPis);
+    for(int j = 0; j < nPis; j++) {
+      int input = 0;
+      for(int k = 0; k < 32 && k + i * 32 < inputs[0].size(); k++) {
+	input += inputs[j][k + i * 32] << k;
+      }
+      inputs_int[j] = input;
+    }
+    simulate(inputs_int);
+
+    std::bitset<32> correct = 0;
+    for(int k = 0; k < 32 && k + i * 32 < inputs[0].size(); k++) {
+      correct[k] = 1;
+    }
+    for(int j = 0; j < nPos; j++) {
+      int tmp = getvalue(vPos[j]);
+      for(int k = 0; k < 32 && k + i * 32 < inputs[0].size(); k++) {
+	if(correct[k] && outputs[j][k + i * 32] != (tmp & 1)) {
+	  correct[k] = 0;
+	}
+	tmp = tmp >> 1;
+      }
+    }
+    count += correct.count();
+  }
+
+  return (double)count / inputs[0].size();
 }
 
 void aigman::supportfanouts_rec(int i) {

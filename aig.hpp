@@ -3,6 +3,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <boost/dynamic_bitset.hpp>
 
 class aigman {
 public:
@@ -60,6 +61,8 @@ public:
   
   int getvalue(int i);
   void simulate(std::vector<int> const & inputs);
+  double eval(std::vector<boost::dynamic_bitset<> > const & inputs, std::vector<boost::dynamic_bitset<> > const & outputs);
+  double eval(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynamic_bitset<> const & output) { std::vector<boost::dynamic_bitset<> > outputs = {output}; return eval(inputs, outputs); }
 
   void supportfanouts_rec(int i);
   void supportfanouts();
