@@ -408,7 +408,7 @@ int BddRestrict( BddMan * p, int f, int c )
   SideEffects []
   SeeAlso     []
 ***********************************************************************/
-int BddSqueeze( BddMan * p, int l, int u )
+int BddSqueeze( BddMan * p, int l, int u, bool finter = 1, bool fhigheffort = 0 )
 {
   if (l == 0) return l;
   if (u == 1) return u;
@@ -429,30 +429,34 @@ int BddSqueeze( BddMan * p, int l, int u )
   }
   int r;
   if ( BddOr( p, LitNot(lt), le ) == 1 && BddOr( p, LitNot(ue), ut ) == 1 )
-    return BddSqueeze( p, le, ue );
+    return BddSqueeze( p, le, ue, finter, fhigheffort );
   if ( BddOr( p, LitNot(le), lt ) == 1 && BddOr( p, LitNot(ut), ue ) == 1 )
-    return BddSqueeze( p, lt, ut );
-  if ( BddOr( p, LitNot(le), LitNot(ut) ) == 1 && BddOr( p, ue, lt ) == 1 ) {
-    r = BddSqueeze( p, lt, ut );
-    return BddUniqueCreate( p, index, r, LitNot(r) );
-  }
-  if ( BddOr( p, LitNot(lt), LitNot(ue) ) == 1 && BddOr( p, ut, le ) == 1 ) {
-    r = BddSqueeze( p, le, ue );
-    return BddUniqueCreate( p, index, LitNot(r), r );
+    return BddSqueeze( p, lt, ut, finter, fhigheffort );
+  if(finter) {
+    if ( BddOr( p, LitNot(le), LitNot(ut) ) == 1 && BddOr( p, ue, lt ) == 1 ) {
+      r = BddSqueeze( p, lt, ut, finter, fhigheffort );
+      return BddUniqueCreate( p, index, r, LitNot(r) );
+    }
+    if ( BddOr( p, LitNot(lt), LitNot(ue) ) == 1 && BddOr( p, ut, le ) == 1 ) {
+      r = BddSqueeze( p, le, ue, finter, fhigheffort );
+      return BddUniqueCreate( p, index, LitNot(r), r );
+    }
   }
   int ar = -1;
-  if ( BddOr( p, LitNot(lt), ue ) == 1 && BddOr( p, LitNot(le), ut ) == 1 ) {
-    int au, al;
-    au = BddAnd( p, ut, ue );
-    al = BddOr( p , lt, le );
-    ar = BddSqueeze( p, al, au );
+  if(fhigheffort) {
+    if ( BddOr( p, LitNot(lt), ue ) == 1 && BddOr( p, LitNot(le), ut ) == 1 ) {
+      int au, al;
+      au = BddAnd( p, ut, ue );
+      al = BddOr( p , lt, le );
+      ar = BddSqueeze( p, al, au, finter, fhigheffort );
+    }
   }
   int t, e;
-  t = BddSqueeze( p, lt, ut );
-  e = BddSqueeze( p, le, ue );
+  t = BddSqueeze( p, lt, ut, finter, fhigheffort );
+  e = BddSqueeze( p, le, ue, finter, fhigheffort );
   r = (t == e) ? t : BddUniqueCreate( p, index, t, e );
   if ( ar != -1 )
-    if ( BddCountNodes( p,ar ) <= BddCountNodes( p, r ) )
+    if ( BddCountNodes( p, ar ) <= BddCountNodes( p, r ) )
       r = ar;
   return r;
 }
