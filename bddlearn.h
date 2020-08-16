@@ -536,10 +536,11 @@ int BddMinimize3( BddMan * p, int f, int g, bool finter = 1 )
   if(g == 0) return f;
   assert(g != 1);
   // top var
-  int var = std::min(BddVar(p, f), BddVar(p, g));
+  if(BddVar(p, f) > BddVar(p, g))
+    return BddMinimize3(p, f, BddAnd(p, BddElse(p, g), BddThen(p, g)), finter);
+  int var = BddVar(p, f);
   int f0, f1, g0, g1;
-  if(var == BddVar(p, f)) f0 = BddElse(p, f), f1 = BddThen(p, f);
-  else f0 = f1 = f;
+  f0 = BddElse(p, f), f1 = BddThen(p, f);
   if(var == BddVar(p, g)) g0 = BddElse(p, g), g1 = BddThen(p, g);
   else g0 = g1 = g;
   // only one case is cared
@@ -646,15 +647,21 @@ int BddBreadthMinimize( BddMan * p, int f, int g ) {
   for(int i = 0; i < p->nVars; i++) {
     // get nodes in the level
     std::vector<std::pair<int, int> > targets;
-    for (auto it = fronts.begin(); it != fronts.end();) {
-      if(BddVar(p, it->first) == i || BddVar(p, it->second) == i) {
+    std::set<std::pair<int, int> > nfronts;
+    for(auto it = fronts.begin(); it != fronts.end();) {
+      if(BddVar(p, it->first) == i) {
 	targets.push_back(*it);
+	it = fronts.erase(it);
+      }
+      else if(BddVar(p, it->second) == i) {
+	nfronts.insert(std::make_pair(it->first, BddAnd(p, BddElse(p, it->second), BddThen(p, it->second))));
 	it = fronts.erase(it);
       }
       else {
 	++it;
       }
     }
+    fronts.insert(nfronts.begin(), nfronts.end());
     // minimize the level
     if(targets.size() > 1) {
       BddBreadthMinimize_level(p, targets, m);
