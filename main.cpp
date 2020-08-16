@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
   }
 
   // separate evaluation sets
-  double ratio = 1;
+  double ratio = 0.7;
   std::vector<boost::dynamic_bitset<> > traininputs;
   std::vector<boost::dynamic_bitset<> > trainoutputs;
   std::vector<boost::dynamic_bitset<> > evalinputs(inputs.size());
@@ -43,7 +43,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  bddlearn(traininputs, trainoutputs[0], outname);
+  bddlearn(traininputs, trainoutputs[0], outname, &evalinputs, &evaloutputs[0]);
   
   return 0;
 }

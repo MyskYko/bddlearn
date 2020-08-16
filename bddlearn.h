@@ -826,7 +826,7 @@ int BddBreadthMinimize2( BddMan * p, int f, int g ) {
   SideEffects []
   SeeAlso     []
 ***********************************************************************/
-void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynamic_bitset<> const & output, std::string aigname) {
+void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynamic_bitset<> const & output, std::string aigname, std::vector<boost::dynamic_bitset<> > const * einputs = NULL, boost::dynamic_bitset<> const * eoutput = NULL) {
   int ninputs = inputs.size();
   BddMan * p = BddManAlloc(ninputs, 25);
   int onset = 0;
@@ -848,28 +848,85 @@ void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynam
       offset = BddOr(p, offset, minterm);
     }
   }
+  
+  int eonset = 0;
+  int eoffset = 0;
+  int etotal = 0;
+  if(eoutput) {
+    etotal = (*einputs)[0].size();
+    for(int i = 0; i < (*einputs)[0].size(); i++) {
+      int minterm = 1;
+      for(int j = 0; j < (*einputs).size(); j++) {
+	if((*einputs)[j][i]) {
+	  minterm = BddAnd(p, minterm, BddIthVar(j));
+	}
+	else {
+	  minterm = BddAnd(p, minterm, LitNot(BddIthVar(j)));
+	}
+      }
+      if((*eoutput)[i]) {
+	eonset = BddOr(p, eonset, minterm);
+      }
+      else {
+	eoffset = BddOr(p, eoffset, minterm);
+      }
+    }
+  }
 
   std::cout << "onset : " << BddCountNodes(p, onset) << std::endl;
   std::cout << "offset : " << BddCountNodes(p, offset) << std::endl;
 
   aigman * aig;
-  
-  /*
-  int x = BddSqueeze(p, onset, LitNot(offset));
-  std::cout << "squeeze : " << BddCountNodes(p, x) << std::endl;
-  */
-  /*
-  int x = BddDCIntersect(p, onset, LitNot(onset), LitNot(offset), LitNot(offset));
-  std::cout << "dcinter : " << BddCountNodes(p, x) << std::endl;
-  */
+  int x;
   int careset = BddOr(p, onset, offset);
-  /*
-  int x = BddMinimize3(p, onset, LitNot(careset));
-  std::cout << "minimize : " << BddCountNodes(p, x) << std::endl;
-  */
+  
+  x = BddSqueeze(p, onset, LitNot(offset), 0);
+  std::cout << "squeeze : " << BddCountNodes(p, x);
+  if(etotal) {
+    int error = BddOr(p, BddAnd(p, eonset, LitNot(x)), BddAnd(p, eoffset, x));
+    std::cout << " (" << 100 * (1 - ((double)BddCountOnes(p, error) / etotal)) << "%)";
+  }
+  std::cout << std::endl;
 
-  int x = BddBreadthMinimize(p, onset, LitNot(careset));
-  std::cout << "bmin : " << BddCountNodes(p, x) << std::endl;
+  x = BddSqueeze(p, onset, LitNot(offset), 1);
+  std::cout << "squeeze inter : " << BddCountNodes(p, x);
+  if(etotal) {
+    int error = BddOr(p, BddAnd(p, eonset, LitNot(x)), BddAnd(p, eoffset, x));
+    std::cout << " (" << 100 * (1 - ((double)BddCountOnes(p, error) / etotal)) << "%)";
+  }
+  std::cout << std::endl;
+  /*
+  x = BddRestrict(p, onset, careset);
+  std::cout << "restrict : " << BddCountNodes(p, x);
+  if(etotal) {
+    int error = BddOr(p, BddAnd(p, eonset, LitNot(x)), BddAnd(p, eoffset, x));
+    std::cout << " (" << 100 * (1 - ((double)BddCountOnes(p, error) / etotal)) << "%)";
+  }
+  std::cout << std::endl;
+  */
+  x = BddMinimize3(p, onset, LitNot(careset), 0);
+  std::cout << "minimize : " << BddCountNodes(p, x);
+  if(etotal) {
+    int error = BddOr(p, BddAnd(p, eonset, LitNot(x)), BddAnd(p, eoffset, x));
+    std::cout << " (" << 100 * (1 - ((double)BddCountOnes(p, error) / etotal)) << "%)";
+  }
+  std::cout << std::endl;
+
+  x = BddMinimize3(p, onset, LitNot(careset), 1);
+  std::cout << "minimize inter : " << BddCountNodes(p, x);
+  if(etotal) {
+    int error = BddOr(p, BddAnd(p, eonset, LitNot(x)), BddAnd(p, eoffset, x));
+    std::cout << " (" << 100 * (1 - ((double)BddCountOnes(p, error) / etotal)) << "%)";
+  }
+  std::cout << std::endl;
+
+  x = BddBreadthMinimize(p, onset, LitNot(careset));
+  std::cout << "bminimize : " << BddCountNodes(p, x);
+  if(etotal) {
+    int error = BddOr(p, BddAnd(p, eonset, LitNot(x)), BddAnd(p, eoffset, x));
+    std::cout << " (" << 100 * (1 - ((double)BddCountOnes(p, error) / etotal)) << "%)";
+  }
+  std::cout << std::endl;
   
   aig = GenAig( p, x );
   
