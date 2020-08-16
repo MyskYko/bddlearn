@@ -22,6 +22,7 @@ struct BddMan_
     int *              pObjs;         // array of pairs <cof0, cof1> for each node
     unsigned short *   pVars;         // array of variables for each node
     unsigned char *    pMark;         // array of marks for each BDD node
+    unsigned short *   pLevels;
     unsigned           nUniqueMask;   // selection mask for unique table
     unsigned           nCacheMask;    // selection mask for computed table
     int                nCacheLookups; // the number of computed table lookups
@@ -38,11 +39,20 @@ int LitNotCond( int i, bool c ) { return i ^ (int)c; }
 int BddIthVar( int i ) { return Var2Lit(i + 1, 0); }
 unsigned BddHash( int Arg0, int Arg1, int Arg2 ) { return 12582917 * Arg0 + 4256249 * Arg1 + 741457 * Arg2; }
 
-int BddVar( BddMan * p, int i ) { return (int)p->pVars[Lit2Var(i)]; }
+int Var2Level( BddMan * p, int i ) { return p->pLevels[i]; }
+int Level2Var( BddMan * p, int i ) {
+  for(int v = 0; v < p->nVars; v++)
+    if(i == p->pLevels[v])
+      return v;
+  abort();
+}
+
+int BddVar( BddMan * p, int i ) { return p->pVars[Lit2Var(i)]; }
+int BddLevel( BddMan * p, int i ) { return Var2Level(p, BddVar(p, i)); }
 int BddThen( BddMan * p, int i ) { return LitNotCond(p->pObjs[LitRegular(i)], LitIsCompl(i)); }
 int BddElse( BddMan * p, int i ) { return LitNotCond(p->pObjs[LitRegular(i)+1], LitIsCompl(i)); }
 
-int BddMark( BddMan * p, int i ) { return (int)p->pMark[Lit2Var(i)]; }
+int BddMark( BddMan * p, int i ) { return p->pMark[Lit2Var(i)]; }
 void BddSetMark( BddMan * p, int i, int m ){ p->pMark[Lit2Var(i)] = m; }
 
 ////////////////////////////////////////////////////////////////////////
@@ -76,8 +86,8 @@ int BddUniqueCreateInt( BddMan * p, int Var, int Then, int Else )
 int BddUniqueCreate( BddMan * p, int Var, int Then, int Else )
 {
     assert( Var >= 0 && Var < p->nVars );
-    assert( Var < BddVar(p, Then)  );
-    assert( Var < BddVar(p, Else) );
+    assert( Var2Level(p, Var) < BddLevel(p, Then) );
+    assert( Var2Level(p, Var) < BddLevel(p, Else) );
     if ( Then == Else )
         return Else;
     if ( !LitIsCompl(Else) )
@@ -134,7 +144,10 @@ BddMan * BddManAlloc( int nVars, int nPowTwo )
     p->pObjs       = (int*)calloc( 2*p->nObjsAlloc, sizeof(int) );
     p->pMark       = (unsigned char *)calloc( p->nObjsAlloc, sizeof(char) );
     p->pVars       = (unsigned short*)calloc( p->nObjsAlloc, sizeof(short) );
-    p->pVars[0]    = 0xffff;
+    p->pLevels     = (unsigned short*)calloc( p->nVars + 1, sizeof(short) );
+    for ( i = 0; i < nVars + 1; i++ )
+        p->pLevels[i] = i;
+    p->pVars[0]    = p->nVars;
     p->nObjs       = 1;
     for ( i = 0; i < nVars; i++ )
         BddUniqueCreate( p, i, 1, 0 );
@@ -150,6 +163,7 @@ void BddManFree( BddMan * p )
     free( p->pCache );
     free( p->pObjs );
     free( p->pVars );
+    free( p->pLevels );
     free( p );
 }
 
@@ -162,7 +176,7 @@ void BddManFree( BddMan * p )
 ***********************************************************************/
 int BddAnd( BddMan * p, int a, int b )
 {
-    int r0, r1, r;
+    int v, r0, r1, r;
     if ( a == 0 ) return 0;
     if ( b == 0 ) return 0;
     if ( a == 1 ) return b;
@@ -171,16 +185,19 @@ int BddAnd( BddMan * p, int a, int b )
     if ( a > b )  return BddAnd( p, b, a );
     if ( (r = BddCacheLookup(p, a, b)) >= 0 )
         return r;
-    if ( BddVar(p, a) < BddVar(p, b) )
-        r0 = BddAnd( p, BddElse(p, a), b ), 
+    if ( BddLevel(p, a) < BddLevel(p, b) )
+        v  = BddVar(p, a),
+        r0 = BddAnd( p, BddElse(p, a), b ),
         r1 = BddAnd( p, BddThen(p, a), b );
-    else if ( BddVar(p, a) > BddVar(p, b) )
+    else if ( BddLevel(p, a) > BddLevel(p, b) )
+        v  = BddVar(p, b),
         r0 = BddAnd( p, a, BddElse(p, b) ), 
         r1 = BddAnd( p, a, BddThen(p, b) );
     else // if ( BddVar(p, a) == BddVar(p, b) )
+        v  = BddVar(p, a),
         r0 = BddAnd( p, BddElse(p, a), BddElse(p, b) ), 
         r1 = BddAnd( p, BddThen(p, a), BddThen(p, b) );
-    r = BddUniqueCreate( p, std::min(BddVar(p, a), BddVar(p, b)), r1, r0 );
+    r = BddUniqueCreate( p, v, r1, r0 );
     return BddCacheInsert( p, a, b, r );
 }
 int BddOr( BddMan * p, int a, int b )
@@ -399,9 +416,9 @@ int BddRestrict( BddMan * p, int f, int c )
     if ( f == 0 || f == 1 ) return f;
     if ( !BddElse(p, c) ) return BddRestrict( p, f, BddThen(p, c) );
     if ( !BddThen(p, c) ) return BddRestrict( p, f, BddElse(p, c) );
-    if ( BddVar(p, f) > BddVar(p, c) )
+    if ( BddLevel(p, f) > BddLevel(p, c) )
       return BddRestrict( p, f, BddOr( p, BddElse(p, c), BddThen(p, c) ) );
-    if ( BddVar(p, f) < BddVar(p, c) )
+    if ( BddLevel(p, f) < BddLevel(p, c) )
         r0 = BddRestrict( p, BddElse(p, f), c ),
         r1 = BddRestrict( p, BddThen(p, f), c );
     else
@@ -422,13 +439,13 @@ int BddSqueeze( BddMan * p, int l, int u, bool finter = 1, bool fhigheffort = 0 
   if (l == 0) return l;
   if (u == 1) return u;
   int topu, topl, index, le, lt, ue, ut;
-  topu = BddVar( p, u );
-  topl = BddVar( p, l );
+  topu = BddLevel( p, u );
+  topl = BddLevel( p, l );
   if ( topu <= topl ) {
-    index = topu;
+    index = BddVar( p, u );
     ut = BddThen( p, u ); ue = BddElse( p, u );
   } else {
-    index = topl;
+    index = BddVar( p, l );
     ut = ue = u;
   }
   if ( topl <= topu ) {
@@ -485,15 +502,15 @@ bool BddCheckIntersect( BddMan * p, int af, int ag, int bf, int bg ) {
   if(ag == 1) return 1;
   if(bg == 1) return 1;
   // top var
-  int var = std::min({BddVar(p, af), BddVar(p, ag), BddVar(p, bf), BddVar(p, bg)});
+  int l = std::min({BddLevel(p, af), BddLevel(p, ag), BddLevel(p, bf), BddLevel(p, bg)});
   int af0, af1, ag0, ag1, bf0, bf1, bg0, bg1;
-  if(var == BddVar(p, af)) af0 = BddElse(p, af), af1 = BddThen(p, af);
+  if(l == BddLevel(p, af)) af0 = BddElse(p, af), af1 = BddThen(p, af);
   else af0 = af1 = af;
-  if(var == BddVar(p, ag)) ag0 = BddElse(p, ag), ag1 = BddThen(p, ag);
+  if(l == BddLevel(p, ag)) ag0 = BddElse(p, ag), ag1 = BddThen(p, ag);
   else ag0 = ag1 = ag;
-  if(var == BddVar(p, bf)) bf0 = BddElse(p, bf), bf1 = BddThen(p, bf);
+  if(l == BddLevel(p, bf)) bf0 = BddElse(p, bf), bf1 = BddThen(p, bf);
   else bf0 = bf1 = bf;
-  if(var == BddVar(p, bg)) bg0 = BddElse(p, bg), bg1 = BddThen(p, bg);
+  if(l == BddLevel(p, bg)) bg0 = BddElse(p, bg), bg1 = BddThen(p, bg);
   else bg0 = bg1 = bg;
   // only one case is cared
   if(ag0 == 1 && bg0 == 1)
@@ -518,15 +535,15 @@ int BddDCIntersect2( BddMan * p, int af, int ag, int bf, int bg )
   if(ag == 1) return bf;
   if(bg == 1) return af;
   // top var
-  int var = std::min({BddVar(p, af), BddVar(p, ag), BddVar(p, bf), BddVar(p, bg)});
-  int af0, af1, ag0, ag1, bf0, bf1, bg0, bg1;
-  if(var == BddVar(p, af)) af0 = BddElse(p, af), af1 = BddThen(p, af);
+  int l = std::min({BddLevel(p, af), BddLevel(p, ag), BddLevel(p, bf), BddLevel(p, bg)});
+  int v, af0, af1, ag0, ag1, bf0, bf1, bg0, bg1;
+  if(l == BddLevel(p, af)) v = BddVar(p, af), af0 = BddElse(p, af), af1 = BddThen(p, af);
   else af0 = af1 = af;
-  if(var == BddVar(p, ag)) ag0 = BddElse(p, ag), ag1 = BddThen(p, ag);
+  if(l == BddLevel(p, ag)) v = BddVar(p, ag), ag0 = BddElse(p, ag), ag1 = BddThen(p, ag);
   else ag0 = ag1 = ag;
-  if(var == BddVar(p, bf)) bf0 = BddElse(p, bf), bf1 = BddThen(p, bf);
+  if(l == BddLevel(p, bf)) v = BddVar(p, bf), bf0 = BddElse(p, bf), bf1 = BddThen(p, bf);
   else bf0 = bf1 = bf;
-  if(var == BddVar(p, bg)) bg0 = BddElse(p, bg), bg1 = BddThen(p, bg);
+  if(l == BddLevel(p, bg)) v = BddVar(p, bg), bg0 = BddElse(p, bg), bg1 = BddThen(p, bg);
   else bg0 = bg1 = bg;
   // only one case is cared
   if(ag0 == 1 && bg0 == 1)
@@ -537,7 +554,7 @@ int BddDCIntersect2( BddMan * p, int af, int ag, int bf, int bg )
   int r0, r1;
   r0 = BddDCIntersect2(p, af0, ag0, bf0, bg0);
   r1 = BddDCIntersect2(p, af1, ag1, bf1, bg1);
-  return BddUniqueCreate( p, var, r1, r0 );  
+  return BddUniqueCreate( p, v, r1, r0 );
 }
 int BddMinimize3( BddMan * p, int f, int g, bool finter = 1 )
 {
@@ -545,7 +562,7 @@ int BddMinimize3( BddMan * p, int f, int g, bool finter = 1 )
   if(g == 0) return f;
   assert(g != 1);
   // top var
-  if(BddVar(p, f) > BddVar(p, g))
+  if(BddLevel(p, f) > BddLevel(p, g))
     return BddMinimize3(p, f, BddAnd(p, BddElse(p, g), BddThen(p, g)), finter);
   int var = BddVar(p, f);
   int f0, f1, g0, g1;
@@ -665,11 +682,11 @@ int BddBreadthMinimize( BddMan * p, int f, int g ) {
     std::vector<std::pair<int, int> > targets;
     std::set<std::pair<int, int> > nfronts;
     for(auto it = fronts.begin(); it != fronts.end();) {
-      if(BddVar(p, it->first) == i) {
+      if(BddLevel(p, it->first) == i) {
 	targets.push_back(*it);
 	it = fronts.erase(it);
       }
-      else if(BddVar(p, it->second) == i) {
+      else if(BddLevel(p, it->second) == i) {
 	nfronts.insert(std::make_pair(it->first, BddAnd(p, BddElse(p, it->second), BddThen(p, it->second))));
 	it = fronts.erase(it);
       }
@@ -687,9 +704,9 @@ int BddBreadthMinimize( BddMan * p, int f, int g ) {
       assert(t.second != 1);
       assert(t.first != 0 && t.first != 1);
       int t0f, t0g, t1f, t1g;
-      if(BddVar(p, t.first) == i) t0f = BddElse(p, t.first), t1f = BddThen(p, t.first);
+      if(BddLevel(p, t.first) == i) t0f = BddElse(p, t.first), t1f = BddThen(p, t.first);
       else t0f = t1f = t.first;
-      if(BddVar(p, t.second) == i) t0g = BddElse(p, t.second), t1g = BddThen(p, t.second);
+      if(BddLevel(p, t.second) == i) t0g = BddElse(p, t.second), t1g = BddThen(p, t.second);
       else t0g = t1g = t.second;
       std::pair<int, int> t0, t1;
       t0 = std::make_pair(t0f, t0g);
@@ -705,7 +722,10 @@ int BddBreadthMinimize( BddMan * p, int f, int g ) {
   std::reverse(res.begin(), res.end());
   for(auto t : res) {
     // get previous children
-    int i = std::min(BddVar(p, t.first), BddVar(p, t.second));
+    int l = std::min(BddLevel(p, t.first), BddLevel(p, t.second));
+    int v;
+    if(BddLevel(p, t.first) == l) v = BddVar(p, t.first);
+    if(BddLevel(p, t.second) == l) v = BddVar(p, t.second);
     std::pair<int, int> t0, t1;
     t0 = cs[t].first;
     t1 = cs[t].second;
@@ -741,9 +761,9 @@ int BddBreadthMinimize( BddMan * p, int f, int g ) {
     // create new node
     int tf, tg;
     if(t0.first == t1.first) tf = t0.first;
-    else tf = BddUniqueCreate(p, i, t1.first, t0.first);
+    else tf = BddUniqueCreate(p, v, t1.first, t0.first);
     if(t0.second == t1.second) tg = t0.second;
-    else tg = BddUniqueCreate(p, i, t1.second, t0.second);
+    else tg = BddUniqueCreate(p, v, t1.second, t0.second);
     m[t] = std::make_pair(std::make_pair(tf, tg), 0);
   }
   if(m.count(root)) return LitNotCond(m[root].first.first, m[root].second);
@@ -762,12 +782,12 @@ int BddBreadthMinimize2( BddMan * p, int f, int g ) {
     if(t.second == 1) continue;
     if(t.first == 0 || t.first == 1) continue;
     //std::cout << t.first << "," << t.second << std::endl;
-    int var = std::min(BddVar(p, t.first), BddVar(p, t.second));
-    nodes[var].push_back(t);
-    int t0f, t0g, t1f, t1g;
-    if(BddVar(p, t.first) == var) t0f = BddElse(p, t.first), t1f = BddThen(p, t.first);
+    int l = std::min(BddLevel(p, t.first), BddLevel(p, t.second));
+    nodes[l].push_back(t);
+    int v, t0f, t0g, t1f, t1g;
+    if(BddLevel(p, t.first) == l) v = BddVar(p, t.first), t0f = BddElse(p, t.first), t1f = BddThen(p, t.first);
     else t0f = t1f = t.first;
-    if(BddVar(p, t.second) == var) t0g = BddElse(p, t.second), t1g = BddThen(p, t.second);
+    if(BddLevel(p, t.second) == l) v = BddVar(p, t.second), t0g = BddElse(p, t.second), t1g = BddThen(p, t.second);
     else t0g = t1g = t.second;
     //std::cout << t0f << "," << t0g << " " << t1f << "," << t1g << std::endl;
     std::pair<int, int> t0, t1;
@@ -778,10 +798,11 @@ int BddBreadthMinimize2( BddMan * p, int f, int g ) {
     targets.push_back(t1);
   }
   // minimize each level
-  for(int var = p->nVars - 1; var >= 0; var--) {
+  for(int l = p->nVars - 1; l >= 0; l--) {
+    int v = Level2Var(p, l);
     // build current nodes
     std::set<std::pair<int, int> > s;
-    for(auto t : nodes[var]) {
+    for(auto t : nodes[l]) {
       std::pair<int, int> t0, t1;
       t0 = cs[t].first;
       t1 = cs[t].second;
@@ -813,9 +834,9 @@ int BddBreadthMinimize2( BddMan * p, int f, int g ) {
       // create new node
       int tf, tg;
       if(t0.first == t1.first) tf = t0.first;
-      else tf = BddUniqueCreate(p, var, t1.first, t0.first);
+      else tf = BddUniqueCreate(p, v, t1.first, t0.first);
       if(t0.second == t1.second) tg = t0.second;
-      else tg = BddUniqueCreate(p, var, t1.second, t0.second);
+      else tg = BddUniqueCreate(p, v, t1.second, t0.second);
       m[t] = std::make_pair(std::make_pair(tf, tg), 0);
       s.insert(m[t].first);
     }
