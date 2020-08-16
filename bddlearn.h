@@ -227,6 +227,15 @@ int BddCountNodes( BddMan * p, int i )
     BddUnmark_rec( p, i );
     return Count;
 }
+int BddCountNodes( BddMan * p, int i, int j )
+{
+    int Count = BddCount_rec( p, i );
+    Count += BddCount_rec( p, j );
+    BddUnmark_rec( p, i );
+    BddUnmark_rec( p, j );
+    return Count;
+}
+
 /*
 int BddCountNodesArray( BddMan * p, Vec_Int_t * vNodes )
 {
@@ -577,7 +586,7 @@ int BddMinimize3( BddMan * p, int f, int g, bool finter = 1 )
   SideEffects []
   SeeAlso     []
 ***********************************************************************/
-void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & ts, std::map<std::pair<int, int>, std::pair<std::pair<int, int>, bool> > & m ) {
+void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & ts, std::map<std::pair<int, int>, std::pair<std::pair<int, int>, bool> > & m, double maxinc = 1.1 ) {
   std::vector<std::pair<int, int> > tsold = ts;
   std::vector<int> c(ts.size());
   for(int i = 0; i < ts.size(); i++) {
@@ -601,21 +610,28 @@ void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & t
     if(abs(c[i]) <= i) continue;
     for(int j = i + 1; j < ts.size(); j++) {
       if(abs(c[j]) <= j) continue;
-      if(BddCheckIntersect(p, ts[i].first, ts[i].second, LitNot(ts[j].first), ts[j].second)) {
-	int f2 = BddDCIntersect2( p, ts[i].first, ts[i].second, LitNot(ts[j].first), ts[j].second );
-	int g2 = BddAnd( p, ts[i].second, ts[j].second );
-	ts[i].first = f2;
-	ts[i].second = g2;
-	c[j] = -(i + 1);
-	continue;
-      }
+      int prev = BddCountNodes(p, ts[i].first, ts[j].first);
       if(BddCheckIntersect(p, ts[i].first, ts[i].second, ts[j].first, ts[j].second)) {
 	int f2 = BddDCIntersect2( p, ts[i].first, ts[i].second, ts[j].first, ts[j].second );
-	int g2 = BddAnd( p, ts[i].second, ts[j].second );
-	ts[i].first = f2;
-	ts[i].second = g2;
-	c[j] = i + 1;
-	continue;
+	int next = BddCountNodes(p, f2);
+	if(next < prev * maxinc) {
+	  int g2 = BddAnd( p, ts[i].second, ts[j].second );
+	  ts[i].first = f2;
+	  ts[i].second = g2;
+	  c[j] = i + 1;
+	  continue;
+	}
+      }
+      if(BddCheckIntersect(p, ts[i].first, ts[i].second, LitNot(ts[j].first), ts[j].second)) {
+	int f2 = BddDCIntersect2( p, ts[i].first, ts[i].second, LitNot(ts[j].first), ts[j].second );
+	int next = BddCountNodes(p, f2);
+	if(next < prev * maxinc) {
+	  int g2 = BddAnd( p, ts[i].second, ts[j].second );
+	  ts[i].first = f2;
+	  ts[i].second = g2;
+	  c[j] = -(i + 1);
+	  continue;
+	}
       }
     }
   }
