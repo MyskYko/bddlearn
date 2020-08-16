@@ -7,6 +7,7 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <list>
 #include <boost/dynamic_bitset.hpp>
 #include "aig.hpp"
 
@@ -27,6 +28,9 @@ struct BddMan_
     unsigned           nCacheMask;    // selection mask for computed table
     int                nCacheLookups; // the number of computed table lookups
     int                nCacheMisses;  // the number of computed table misses
+
+  int * pEdges;
+  std::vector<std::list<int> > nodelist;
 };
 
 int Var2Lit( int i, bool c ) { return i << 1 + (int)c; }
@@ -54,6 +58,10 @@ int BddElse( BddMan * p, int i ) { return LitNotCond(p->pObjs[LitRegular(i)+1], 
 
 int BddMark( BddMan * p, int i ) { return p->pMark[Lit2Var(i)]; }
 void BddSetMark( BddMan * p, int i, int m ){ p->pMark[Lit2Var(i)] = m; }
+
+int BddEdge( BddMan * p, int i ) { return p->pEdges[Lit2Var(i)]; }
+void BddIncEdge( BddMan *p, int i ) { if(i == 0 || i == 1) return; p->pEdges[Lit2Var(i)]++; assert(p->pEdges[Lit2Var(i)] > 0); }
+void BddDecEdge( BddMan *p, int i ) { if(i == 0 || i == 1) return; p->pEdges[Lit2Var(i)]--; assert(p->pEdges[Lit2Var(i)] >= 0); }
 
 ////////////////////////////////////////////////////////////////////////
 ///                     FUNCTION DEFINITIONS                         ///
@@ -152,6 +160,7 @@ BddMan * BddManAlloc( int nVars, int nPowTwo )
     for ( i = 0; i < nVars; i++ )
         BddUniqueCreate( p, i, 1, 0 );
     assert( p->nObjs == nVars + 1 );
+    p->pEdges = NULL;
     return p;
 }
 void BddManFree( BddMan * p )
@@ -164,6 +173,7 @@ void BddManFree( BddMan * p )
     free( p->pObjs );
     free( p->pVars );
     free( p->pLevels );
+    if(p->pEdges) free(p->pEdges);
     free( p );
 }
 
@@ -211,6 +221,109 @@ int BddXor( BddMan * p, int a, int b )
     r1 = BddAnd( p, a, LitNot(b) );
     return BddOr( p, r0, r1 );
 }
+/**Function*************************************************************
+  Synopsis    [Swap levels at i and i + 1.]
+  Description []
+               
+  SideEffects []
+  SeeAlso     []
+***********************************************************************/
+void BddRecursiveRef( BddMan * p, int x )
+{
+  if(x == 0 || x == 1) return;
+  assert(!p->nodelist.empty());
+  assert(p->pEdges);
+  if(BddEdge(p, x) == 0) {
+    p->nodelist[BddVar(p, x)].push_back(Lit2Var(x));
+    BddRecursiveRef(p, BddThen(p, x));
+    BddRecursiveRef(p, BddElse(p, x));
+  }
+  BddIncEdge(p, x);
+}
+void BddDeregister( BddMan * p, int a )
+{
+  int Var, Then, Else;
+  Var = p->pVars[a], Then = p->pObjs[a+a], Else = p->pObjs[a+a+1];
+  int *q = p->pUnique + (BddHash(Var, Then, Else) & p->nUniqueMask);
+  for ( ; *q; q = p->pNexts + *q )
+    if(*q == a) {
+      *q = p->pNexts[*q];
+      return;
+    }
+  abort();
+}
+void BddSwap( BddMan * p, int i )
+{
+  assert(!p->nodelist.empty());
+  assert(p->pEdges);
+  int uv = Level2Var(p, i);
+  int lv = Level2Var(p, i + 1);
+  // extract up nodes related to low nodes
+  std::list<int> extracted;
+  for(auto it = p->nodelist[uv].begin(); it != p->nodelist[uv].end();) {
+    if(BddVar(p, p->pObjs[*it+*it]) == lv || BddVar(p, p->pObjs[*it+*it+1]) == lv) {
+      extracted.push_back(*it);
+      it = p->nodelist[uv].erase(it);
+    }
+    else it++;
+  }
+  // swap levels
+  p->pLevels[uv] = i + 1;
+  p->pLevels[lv] = i;
+  // reconstruct extracted nodes
+  for(auto a : extracted) {
+    // get grandchildren with dec edges
+    int t, e, tt, te, et, ee;
+    t = p->pObjs[a+a], e = p->pObjs[a+a+1];
+    BddDecEdge(p, t);
+    if(BddVar(p, t) == lv) {
+      tt = BddThen(p, t), te = BddElse(p, t);
+      if(BddEdge(p, t) == 0) BddDecEdge(p, tt), BddDecEdge(p, te);
+    }
+    else tt = te = t;
+    BddDecEdge(p, e);
+    if(BddVar(p, e) == lv) {
+      et = BddThen(p, e), ee = BddElse(p, e);
+      if(BddEdge(p, e) == 0) BddDecEdge(p, et), BddDecEdge(p, ee);
+    }
+    else et = ee = e;
+    // create new children with inc edges, and push them into list
+    int nt, ne;
+    if(tt == et) nt = tt;
+    else {
+      nt = BddUniqueCreate(p, uv, tt, et);
+      if(BddEdge(p, nt) == 0)
+	BddIncEdge(p, tt), BddIncEdge(p, et), p->nodelist[uv].push_back(Lit2Var(nt));
+    }
+    BddIncEdge(p, nt);
+    if(ee == te) ne = ee;
+    else {
+      ne = BddUniqueCreate(p, uv, te, ee);
+      if(BddEdge(p, ne) == 0)
+	BddIncEdge(p, te), BddIncEdge(p, ee), p->nodelist[uv].push_back(Lit2Var(ne));
+    }
+    BddIncEdge(p, ne);
+    // reregister the new node with new children, and push it into list
+    BddDeregister(p, a);
+    int Var, Then, Else;
+    Var = lv, Then = nt, Else = ne;
+    assert( Then != Else );
+    assert(!LitIsCompl(Else));
+    int *q = p->pUnique + (BddHash(Var, Then, Else) & p->nUniqueMask);
+    p->pNexts[a] = *q;
+    *q = a;
+    p->pVars[*q] = Var;
+    p->pObjs[*q+*q] = Then;
+    p->pObjs[*q+*q+1] = Else;
+    p->nodelist[lv].push_back(a);
+  }
+  // erase zero edge nodes
+  for(auto it = p->nodelist[lv].begin(); it != p->nodelist[lv].end();) {
+    if(p->pEdges[*it] == 0) it = p->nodelist[lv].erase(it);
+    else it++;
+  }
+}
+
 
 /**Function*************************************************************
   Synopsis    [Counting nodes.]
@@ -840,7 +953,7 @@ int BddBreadthMinimize2( BddMan * p, int f, int g ) {
       m[t] = std::make_pair(std::make_pair(tf, tg), 0);
       s.insert(m[t].first);
     }
-    std::cout << "lev " << var << " num " << s.size() << std::endl;
+    std::cout << "lev " << l << " num " << s.size() << std::endl;
     // minimize the level
     targets.clear();
     for(auto t : s) {
