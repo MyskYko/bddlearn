@@ -867,6 +867,7 @@ int BddMinimize3( BddMan * p, int f, int g, bool finter = 1 )
   SeeAlso     []
 ***********************************************************************/
 void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & ts, std::map<std::pair<int, int>, std::pair<std::pair<int, int>, bool> > & m, double maxinc = 1.1 ) {
+  bool fverbose = 0;
   std::vector<std::pair<int, int> > tsold = ts;
   std::vector<int> c(ts.size());
   for(int i = 0; i < ts.size(); i++) {
@@ -875,11 +876,13 @@ void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & t
   // compare one (const)
   for(int i = 0; i < ts.size(); i++) {
     if(BddOr(p, ts[i].first, ts[i].second) == 1) {
+      if(fverbose) std::cout << "\t\tassign " << i << " to 1 " << std::endl;
       ts[i].first = 1;
       c[i] = 0;
       continue;
     }
     if(BddOr(p, LitNot(ts[i].first), ts[i].second) == 1) {
+      if(fverbose) std::cout << "\t\tassign " << i << " to 0 " << std::endl;
       ts[i].first = 0;
       c[i] = 0;
       continue;
@@ -895,6 +898,7 @@ void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & t
 	int f2 = BddDCIntersect2( p, ts[i].first, ts[i].second, ts[j].first, ts[j].second );
 	int next = BddCountNodes(p, f2);
 	if(next < prev * maxinc) {
+	  if(fverbose) std::cout << "\t\tbuf merge " << i << " " << j << "(" << prev << "->" << next << ")" << std::endl;
 	  int g2 = BddAnd( p, ts[i].second, ts[j].second );
 	  ts[i].first = f2;
 	  ts[i].second = g2;
@@ -906,6 +910,7 @@ void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & t
 	int f2 = BddDCIntersect2( p, ts[i].first, ts[i].second, LitNot(ts[j].first), ts[j].second );
 	int next = BddCountNodes(p, f2);
 	if(next < prev * maxinc) {
+	  if(fverbose) std::cout << "\t\txor merge " << i << " " << j << "(" << prev << "->" << next << ")" << std::endl;
 	  int g2 = BddAnd( p, ts[i].second, ts[j].second );
 	  ts[i].first = f2;
 	  ts[i].second = g2;
@@ -934,6 +939,7 @@ void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & t
   ts = tsnew;
 }
 int BddBreadthMinimize( BddMan * p, int f, int g ) {
+  bool fverbose = 0;
   std::set<std::pair<int, int> > fronts;
   std::map<std::pair<int, int>, std::pair<std::pair<int, int>, bool> > m;
   std::map<std::pair<int, int>, std::pair<std::pair<int, int>, std::pair<int, int> > > cs;
@@ -941,6 +947,7 @@ int BddBreadthMinimize( BddMan * p, int f, int g ) {
   std::pair<int, int> root(f, g);
   fronts.insert(root);
   for(int i = 0; i < p->nVars; i++) {
+    if(fverbose) std::cout << "level " << i << std::endl;
     // get nodes in the level
     std::vector<std::pair<int, int> > targets;
     std::set<std::pair<int, int> > nfronts;
@@ -958,9 +965,28 @@ int BddBreadthMinimize( BddMan * p, int f, int g ) {
       }
     }
     fronts.insert(nfronts.begin(), nfronts.end());
+    if(fverbose) {
+      std::cout << "\ttargets " << targets.size() << std::endl;
+      int j = 0;
+      for(auto t : targets) {
+	std::cout << "\t\tnode" << j++ << " " << t.first << "," << t.second;
+	std::cout << " (" << BddElse(p, t.first) << "," << BddElse(p, t.second) << " " << BddThen(p, t.first) << "," << BddThen(p, t.second) << ")";
+	std::cout << std::endl;
+      }
+    }
     // minimize the level
     if(targets.size() > 1) {
+      if(fverbose) std::cout << "\tminimize" << std::endl;
       BddBreadthMinimize_level(p, targets, m);
+    }
+    if(fverbose) {
+      std::cout << "\tres " << targets.size() << std::endl;
+      int j = 0;
+      for(auto t : targets) {
+	std::cout << "\t\tnode" << j++ << " " << t.first << "," << t.second;
+	std::cout << " (" << BddElse(p, t.first) << "," << BddElse(p, t.second) << " " << BddThen(p, t.first) << "," << BddThen(p, t.second) << ")";
+	std::cout << std::endl;
+      }
     }
     // add children to fronts, add targets to res
     for(auto t : targets) {
