@@ -338,6 +338,7 @@ int BddSwap( BddMan * p, int i )
   }
   return count;
 }
+int BddCountNodes( BddMan * p, int i );
 int BddCountNodes( BddMan * p, int i, std::vector<int> & v );
 void BddSiftReorder( BddMan * p, int x = 0 )
 {
@@ -397,6 +398,7 @@ void BddSiftReorder( BddMan * p, int x = 0 )
     if(godown) {
       while(Var2Level(p, v) < p->nVars - 1) {
 	dnodes += BddSwap(p, Var2Level(p, v));
+	if(x) dnodes = BddCountNodes(p, x) - basecount;
 	std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
 	if(basecount * 0.1 < dnodes) break;
 	if(mindiff > dnodes) {
@@ -409,6 +411,7 @@ void BddSiftReorder( BddMan * p, int x = 0 )
     // go up
     while(Var2Level(p, v) > 0) {
       dnodes += BddSwap(p, Var2Level(p, v) - 1);
+      if(x) dnodes = BddCountNodes(p, x) - basecount;
       std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
       if(basecount * 0.1 < dnodes) break;
       if(mindiff > dnodes) {
@@ -421,6 +424,7 @@ void BddSiftReorder( BddMan * p, int x = 0 )
     if(!godown) {
       while(Var2Level(p, v) < p->nVars - 1) {
 	dnodes += BddSwap(p, Var2Level(p, v));
+	if(x) dnodes = BddCountNodes(p, x) - basecount;
 	std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
 	if(basecount * 0.1 < dnodes) break;
 	if(mindiff > dnodes) {
@@ -435,6 +439,7 @@ void BddSiftReorder( BddMan * p, int x = 0 )
       // go down
       while(Var2Level(p, v) < minlevel) {
 	dnodes += BddSwap(p, Var2Level(p, v));
+	if(x) dnodes = BddCountNodes(p, x) - basecount;
 	std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
       }
     }
@@ -442,6 +447,7 @@ void BddSiftReorder( BddMan * p, int x = 0 )
       // go up
       while(Var2Level(p, v) > minlevel) {
 	dnodes += BddSwap(p, Var2Level(p, v) - 1);
+	if(x) dnodes = BddCountNodes(p, x) - basecount;
 	std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
       }
     }
@@ -499,7 +505,7 @@ int BddCount_rec( BddMan * p, int i, std::vector<int> & v )
         return 0;
     BddSetMark( p, i, 1 );
     v[BddVar(p, i)]++;
-    return 1 + BddCount_rec(p, BddElse(p, i)) + BddCount_rec(p, BddThen(p, i));
+    return 1 + BddCount_rec(p, BddElse(p, i), v) + BddCount_rec(p, BddThen(p, i), v);
 }
 int BddCountNodes( BddMan * p, int i, std::vector<int> & v )
 {
