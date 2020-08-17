@@ -24,10 +24,13 @@ struct BddMan_
     unsigned short *   pVars;         // array of variables for each node
     unsigned char *    pMark;         // array of marks for each BDD node
     unsigned short *   pLevels;
+    unsigned short *   pRefs;
     unsigned           nUniqueMask;   // selection mask for unique table
     unsigned           nCacheMask;    // selection mask for computed table
     int                nCacheLookups; // the number of computed table lookups
     int                nCacheMisses;  // the number of computed table misses
+
+  int nMinRemoved;
 
   int * pEdges;
   std::vector<std::list<int> > nodelist;
@@ -63,6 +66,19 @@ int BddEdge( BddMan * p, int i ) { return p->pEdges[Lit2Var(i)]; }
 void BddIncEdge( BddMan *p, int i ) { if(i == 0 || i == 1) return; p->pEdges[Lit2Var(i)]++; assert(p->pEdges[Lit2Var(i)] > 0); }
 void BddDecEdge( BddMan *p, int i ) { if(i == 0 || i == 1) return; p->pEdges[Lit2Var(i)]--; assert(p->pEdges[Lit2Var(i)] >= 0); }
 
+int BddRef( BddMan * p, int i ) { return p->pRefs[Lit2Var(i)]; }
+void BddIncRef( BddMan *p, int i ) { if(p->pRefs[Lit2Var(i)] == 0xffff) return; p->pRefs[Lit2Var(i)]++; }
+void BddDecRef( BddMan *p, int i ) { if(p->pRefs[Lit2Var(i)] == 0xffff) return; p->pRefs[Lit2Var(i)]--; assert(p->pRefs[Lit2Var(i)] != 0xffff); }
+void BddPrintRef( BddMan *p ) {
+  std::cout << "ref nodes :" << std::endl;
+  for(int i = p->nVars + 1; i < p->nObjs; i++) {
+    if(p->pRefs[i] == 0xffff)
+      std::cout << "*" << i << std::endl;
+    else if(p->pRefs[i])
+      std::cout << i << std::endl;
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////
 ///                     FUNCTION DEFINITIONS                         ///
 ////////////////////////////////////////////////////////////////////////
@@ -80,27 +96,39 @@ int BddUniqueCreateInt( BddMan * p, int Var, int Then, int Else )
     for ( ; *q; q = p->pNexts + *q )
         if ( (int)p->pVars[*q] == Var && p->pObjs[*q+*q] == Then && p->pObjs[*q+*q+1] == Else )
             return Var2Lit(*q, 0);
-    if ( p->nObjs == p->nObjsAlloc )
-        printf( "Aborting because the number of nodes exceeded %d.\n", p->nObjsAlloc ), fflush(stdout);
-    assert( p->nObjs < p->nObjsAlloc );     
-    *q = p->nObjs++;
+    if ( p->nObjs == p->nObjsAlloc ) {
+      for ( ; p->nMinRemoved < p->nObjsAlloc; p->nMinRemoved++ )
+	if ( p->pVars[p->nMinRemoved] == 0xffff )
+	  break;
+      if ( p->nMinRemoved == p->nObjsAlloc )
+	return -1;
+      *q = p->nMinRemoved++;
+    }
+    else *q = p->nObjs++;
     p->pVars[*q] = Var;
     p->pObjs[*q+*q] = Then;
     p->pObjs[*q+*q+1] = Else;
-//    printf( "Added node %3d: Var = %3d.  Then = %3d.  Else = %3d\n", *q, Var, Then, Else );
+    //printf( "Added node %3d: Var = %3d.  Then = %3d.  Else = %3d\n", *q, Var, Then, Else );
     assert( !LitIsCompl(Else) );
     return Var2Lit(*q, 0);
 }
+void BddGarbageCollect( BddMan * p );
 int BddUniqueCreate( BddMan * p, int Var, int Then, int Else )
 {
     assert( Var >= 0 && Var < p->nVars );
     assert( BddVar2Level(p, Var) < BddLevel(p, Then) );
     assert( BddVar2Level(p, Var) < BddLevel(p, Else) );
-    if ( Then == Else )
-        return Else;
-    if ( !LitIsCompl(Else) )
-        return BddUniqueCreateInt( p, Var, Then, Else );
-    return LitNot( BddUniqueCreateInt(p, Var, LitNot(Then), LitNot(Else)) );
+    if ( Then == Else ) return Else;
+    bool c = LitIsCompl(Else);
+    if ( c ) Then = LitNot(Then), Else = LitNot(Else);
+    int r = BddUniqueCreateInt( p, Var, Then, Else );
+    if ( r < 0 )
+      {
+	BddGarbageCollect( p );
+	r = BddUniqueCreateInt( p, Var, Then, Else );
+	assert( r > 0 );
+      }
+    return LitNotCond( r, c );
 }
 
 /**Function*************************************************************
@@ -146,11 +174,13 @@ BddMan * BddManAlloc( int nVars, int nPowTwo )
     p->nObjsAlloc  = 1 << nPowTwo;
     p->nUniqueMask = (1 << nPowTwo) - 1;
     p->nCacheMask  = (1 << nPowTwo) - 1;
+    p->nMinRemoved = p->nObjsAlloc;
     p->pUnique     = (int*)calloc( p->nUniqueMask + 1, sizeof(int) );
     p->pNexts      = (int*)calloc( p->nObjsAlloc, sizeof(int) );
     p->pCache      = (int*)calloc( 3*(p->nCacheMask + 1), sizeof(int) );
     p->pObjs       = (int*)calloc( 2*p->nObjsAlloc, sizeof(int) );
     p->pMark       = (unsigned char *)calloc( p->nObjsAlloc, sizeof(char) );
+    p->pRefs       = (unsigned short*)calloc( p->nObjsAlloc, sizeof(short) );
     p->pVars       = (unsigned short*)calloc( p->nObjsAlloc, sizeof(short) );
     p->pLevels     = (unsigned short*)calloc( p->nVars + 1, sizeof(short) );
     for ( i = 0; i < nVars + 1; i++ )
@@ -171,6 +201,8 @@ void BddManFree( BddMan * p )
     free( p->pNexts );
     free( p->pCache );
     free( p->pObjs );
+    free( p->pMark );
+    free( p->pRefs );
     free( p->pVars );
     free( p->pLevels );
     if(p->pEdges) free(p->pEdges);
@@ -197,17 +229,18 @@ int BddAnd( BddMan * p, int a, int b )
         return r;
     if ( BddLevel(p, a) < BddLevel(p, b) )
         v  = BddVar(p, a),
-        r0 = BddAnd( p, BddElse(p, a), b ),
-        r1 = BddAnd( p, BddThen(p, a), b );
+	r0 = BddAnd( p, BddElse(p, a), b ), BddIncRef(p, r0),
+	r1 = BddAnd( p, BddThen(p, a), b ), BddIncRef(p, r1);
     else if ( BddLevel(p, a) > BddLevel(p, b) )
         v  = BddVar(p, b),
-        r0 = BddAnd( p, a, BddElse(p, b) ), 
-        r1 = BddAnd( p, a, BddThen(p, b) );
+        r0 = BddAnd( p, a, BddElse(p, b) ), BddIncRef(p, r0),
+	r1 = BddAnd( p, a, BddThen(p, b) ), BddIncRef(p, r1);
     else // if ( BddVar(p, a) == BddVar(p, b) )
         v  = BddVar(p, a),
-        r0 = BddAnd( p, BddElse(p, a), BddElse(p, b) ), 
-        r1 = BddAnd( p, BddThen(p, a), BddThen(p, b) );
+	r0 = BddAnd( p, BddElse(p, a), BddElse(p, b) ), BddIncRef(p, r0),
+	r1 = BddAnd( p, BddThen(p, a), BddThen(p, b) ), BddIncRef(p, r1);
     r = BddUniqueCreate( p, v, r1, r0 );
+    BddDecRef(p, r0), BddDecRef(p, r1);
     return BddCacheInsert( p, a, b, r );
 }
 int BddOr( BddMan * p, int a, int b )
@@ -216,10 +249,14 @@ int BddOr( BddMan * p, int a, int b )
 }
 int BddXor( BddMan * p, int a, int b )
 {
-    int r0, r1;
+    int r0, r1, r;
     r0 = BddAnd( p, LitNot(a), b );
+    BddIncRef(p, r0);
     r1 = BddAnd( p, a, LitNot(b) );
-    return BddOr( p, r0, r1 );
+    BddIncRef(p, r1);
+    r = BddOr( p, r0, r1 );
+    BddDecRef(p, r0), BddDecRef(p, r1);
+    return r;
 }
 
 /**Function*************************************************************
@@ -346,6 +383,56 @@ double BddRatioOnes(BddMan * p, int x) {
 }
 
 /**Function*************************************************************
+  Synopsis    [Garbage collection.]
+  Description []
+               
+  SideEffects []
+  SeeAlso     []
+***********************************************************************/
+void BddMark_rec( BddMan * p, int i )
+{
+    if ( i < 2 )
+        return;
+    if ( BddMark(p, i) )
+        return;
+    BddSetMark( p, i, 1 );
+    BddMark_rec( p, BddElse(p, i) );
+    BddMark_rec( p, BddThen(p, i) );
+}
+void BddDeregister( BddMan * p, int a )
+{
+  int Var, Then, Else;
+  Var = p->pVars[a], Then = p->pObjs[a+a], Else = p->pObjs[a+a+1];
+  int *q = p->pUnique + (BddHash(Var, Then, Else) & p->nUniqueMask);
+  for ( ; *q; q = p->pNexts + *q )
+    if(*q == a) {
+      *q = p->pNexts[*q];
+      return;
+    }
+  abort();
+}
+void BddGarbageCollect( BddMan * p )
+{
+  int count = 0;
+  for(int i = p->nVars + 1; i < p->nObjs; i++)
+    if(p->pRefs[i])
+      BddMark_rec(p, Var2Lit(i, 0));
+  for(int i = p->nVars + 1; i < p->nObjs; i++) {
+    if(!p->pMark[i]) {
+      BddDeregister(p, i);
+      p->pVars[i] = 0xffff;
+      p->pNexts[i] = 0;
+      count++;
+      if(p->nMinRemoved > i) p->nMinRemoved = i;
+    }
+  }
+  for(int i = p->nVars + 1; i < p->nObjs; i++)
+    if(p->pRefs[i])
+      BddUnmark_rec(p, Var2Lit(i, 0));
+  BddCacheClear(p);
+}
+
+/**Function*************************************************************
   Synopsis    [Swap levels at i and i + 1.]
   Description []
                
@@ -375,18 +462,6 @@ void BddRecursiveDeref( BddMan * p, int x )
     BddRecursiveDeref(p, BddThen(p, x));
     BddRecursiveDeref(p, BddElse(p, x));
   }
-}
-void BddDeregister( BddMan * p, int a )
-{
-  int Var, Then, Else;
-  Var = p->pVars[a], Then = p->pObjs[a+a], Else = p->pObjs[a+a+1];
-  int *q = p->pUnique + (BddHash(Var, Then, Else) & p->nUniqueMask);
-  for ( ; *q; q = p->pNexts + *q )
-    if(*q == a) {
-      *q = p->pNexts[*q];
-      return;
-    }
-  abort();
 }
 int BddSwap( BddMan * p, int i )
 {
@@ -673,7 +748,7 @@ aigman *GenAig(BddMan * man, int x, int nVars = -1) {
 int BddRestrict( BddMan * p, int f, int c )
 {
     assert( c );
-    int r0, r1;
+    int r0, r1, r;
     if ( c == 1 ) return f;
     if ( f == 0 || f == 1 ) return f;
     if ( !BddElse(p, c) ) return BddRestrict( p, f, BddThen(p, c) );
@@ -681,12 +756,14 @@ int BddRestrict( BddMan * p, int f, int c )
     if ( BddLevel(p, f) > BddLevel(p, c) )
       return BddRestrict( p, f, BddOr( p, BddElse(p, c), BddThen(p, c) ) );
     if ( BddLevel(p, f) < BddLevel(p, c) )
-        r0 = BddRestrict( p, BddElse(p, f), c ),
-        r1 = BddRestrict( p, BddThen(p, f), c );
+        r0 = BddRestrict( p, BddElse(p, f), c ), BddIncRef(p, r0),
+	r1 = BddRestrict( p, BddThen(p, f), c ), BddIncRef(p, r1);
     else
-        r0 = BddRestrict( p, BddElse(p, f), BddElse(p, c) ),
-        r1 = BddRestrict( p, BddThen(p, f), BddThen(p, c) );
-    return BddUniqueCreate( p, BddVar(p, f), r1, r0 );
+        r0 = BddRestrict( p, BddElse(p, f), BddElse(p, c) ), BddIncRef(p, r0),
+	r1 = BddRestrict( p, BddThen(p, f), BddThen(p, c) ), BddIncRef(p, r1);
+    r = BddUniqueCreate( p, BddVar(p, f), r1, r0 );
+    BddDecRef(p, r0), BddDecRef(p, r1);
+    return r;
 }
 
 /**Function*************************************************************
@@ -715,19 +792,25 @@ int BddSqueeze( BddMan * p, int l, int u, bool finter = 1, bool fhigheffort = 0 
   } else {
     lt = le = l;
   }
-  int r;
+  int r, tmp;
   if ( BddOr( p, LitNot(lt), le ) == 1 && BddOr( p, LitNot(ue), ut ) == 1 )
     return BddSqueeze( p, le, ue, finter, fhigheffort );
   if ( BddOr( p, LitNot(le), lt ) == 1 && BddOr( p, LitNot(ut), ue ) == 1 )
     return BddSqueeze( p, lt, ut, finter, fhigheffort );
   if(finter) {
     if ( BddOr( p, LitNot(le), LitNot(ut) ) == 1 && BddOr( p, ue, lt ) == 1 ) {
-      r = BddSqueeze( p, lt, ut, finter, fhigheffort );
-      return BddUniqueCreate( p, index, r, LitNot(r) );
+      tmp = BddSqueeze( p, lt, ut, finter, fhigheffort );
+      BddIncRef(p, tmp);
+      r = BddUniqueCreate( p, index, tmp, LitNot(tmp) );
+      BddDecRef(p, tmp);
+      return r;
     }
     if ( BddOr( p, LitNot(lt), LitNot(ue) ) == 1 && BddOr( p, ut, le ) == 1 ) {
-      r = BddSqueeze( p, le, ue, finter, fhigheffort );
-      return BddUniqueCreate( p, index, LitNot(r), r );
+      tmp = BddSqueeze( p, le, ue, finter, fhigheffort );
+      BddIncRef(p, tmp);
+      r = BddUniqueCreate( p, index, LitNot(tmp), tmp );
+      BddDecRef(p, tmp);
+      return r;
     }
   }
   int ar = -1;
@@ -735,17 +818,26 @@ int BddSqueeze( BddMan * p, int l, int u, bool finter = 1, bool fhigheffort = 0 
     if ( BddOr( p, LitNot(lt), ue ) == 1 && BddOr( p, LitNot(le), ut ) == 1 ) {
       int au, al;
       au = BddAnd( p, ut, ue );
+      BddIncRef(p, au);
       al = BddOr( p , lt, le );
+      BddIncRef(p, al);
       ar = BddSqueeze( p, al, au, finter, fhigheffort );
+      BddIncRef(p, ar);
+      BddDecRef(p, au), BddDecRef(p, al);
     }
   }
   int t, e;
   t = BddSqueeze( p, lt, ut, finter, fhigheffort );
+  BddIncRef(p, t);
   e = BddSqueeze( p, le, ue, finter, fhigheffort );
+  BddIncRef(p, e);
   r = (t == e) ? t : BddUniqueCreate( p, index, t, e );
-  if ( ar != -1 )
+  BddDecRef(p, t), BddDecRef(p, e);
+  if ( ar != -1 ) {
     if ( BddCountNodes( p, ar ) <= BddCountNodes( p, r ) )
       r = ar;
+    BddDecRef(p, ar);
+  }
   return r;
 }
 
@@ -813,10 +905,14 @@ int BddDCIntersect2( BddMan * p, int af, int ag, int bf, int bg )
   if(ag1 == 1 && bg1 == 1)
     return BddDCIntersect2(p, af0, ag0, bf0, bg0);
   // recurse for each case
-  int r0, r1;
+  int r0, r1, r;
   r0 = BddDCIntersect2(p, af0, ag0, bf0, bg0);
+  BddIncRef(p, r0);
   r1 = BddDCIntersect2(p, af1, ag1, bf1, bg1);
-  return BddUniqueCreate( p, v, r1, r0 );
+  BddIncRef(p, r1);
+  r = BddUniqueCreate( p, v, r1, r0 );
+  BddDecRef(p, r0), BddDecRef(p, r1);
+  return r;
 }
 int BddMinimize3( BddMan * p, int f, int g, bool finter = 1 )
 {
@@ -824,8 +920,14 @@ int BddMinimize3( BddMan * p, int f, int g, bool finter = 1 )
   if(g == 0) return f;
   assert(g != 1);
   // top var
-  if(BddLevel(p, f) > BddLevel(p, g))
-    return BddMinimize3(p, f, BddAnd(p, BddElse(p, g), BddThen(p, g)), finter);
+  if(BddLevel(p, f) > BddLevel(p, g)) {
+    int t, r;
+    t = BddAnd(p, BddElse(p, g), BddThen(p, g));
+    BddIncRef(p, t);
+    r = BddMinimize3(p, f, t, finter);
+    BddDecRef(p, t);
+    return r;
+  }
   int var = BddVar(p, f);
   int f0, f1, g0, g1;
   f0 = BddElse(p, f), f1 = BddThen(p, f);
@@ -840,23 +942,39 @@ int BddMinimize3( BddMan * p, int f, int g, bool finter = 1 )
   if(finter) {
     if(f0 != f1) {
       if(BddCheckIntersect(p, f0, g0, f1, g1)) {
-	int f2 = BddDCIntersect2( p, f0, g0, f1, g1 );
-	int g2 = BddAnd( p, g0, g1 );
-	return BddMinimize3( p, f2, g2, finter );
+	int f2, g2, r;
+	f2 = BddDCIntersect2( p, f0, g0, f1, g1 );
+	BddIncRef(p, f2);
+	g2 = BddAnd( p, g0, g1 );
+	BddIncRef(p, g2);
+	r = BddMinimize3( p, f2, g2, finter );
+	BddDecRef(p, f2), BddDecRef(p, g2);
+	return r;
       }
       if(BddCheckIntersect(p, LitNot(f0), g0, f1, g1)) {
-	int f2 = BddDCIntersect2( p, LitNot(f0), g0, f1, g1 );
-	int g2 = BddAnd( p, g0, g1 );
-	int r = BddMinimize3( p, f2, g2, finter );
-	return BddUniqueCreate( p, var, r, LitNot(r) );      
+	int f2, g2, t, r;
+	f2 = BddDCIntersect2( p, LitNot(f0), g0, f1, g1 );
+	BddIncRef(p, f2);
+	g2 = BddAnd( p, g0, g1 );
+	BddIncRef(p, g2);
+	t = BddMinimize3( p, f2, g2, finter );
+	BddIncRef(p, t);
+	BddDecRef(p, f2), BddDecRef(p, g2);
+	r = BddUniqueCreate( p, var, t, LitNot(t) );
+	BddDecRef(p, t);
+	return r;
       }
     }
   }
   // recurse for each case
-  int r0, r1;
+  int r0, r1, r;
   r0 = BddMinimize3(p, f0, g0, finter);
+  BddIncRef(p, r0);
   r1 = BddMinimize3(p, f1, g1, finter);
-  return BddUniqueCreate( p, var, r1, r0 );
+  BddIncRef(p, r1);
+  r = BddUniqueCreate( p, var, r1, r0 );
+  BddDecRef(p, r0), BddDecRef(p, r1);
+  return r;
 }
 /**Function*************************************************************
   Synopsis    [minimize with DC]
@@ -865,7 +983,7 @@ int BddMinimize3( BddMan * p, int f, int g, bool finter = 1 )
   SideEffects []
   SeeAlso     []
 ***********************************************************************/
-void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & ts, std::map<std::pair<int, int>, std::pair<std::pair<int, int>, bool> > & m, double maxinc = 1.1 ) {
+void BddMinimizeLevel( BddMan * p, std::vector<std::pair<int, int> > & ts, std::map<std::pair<int, int>, std::pair<std::pair<int, int>, bool> > & m, double maxinc = 1.1 ) {
   bool fverbose = 0;
   std::vector<std::pair<int, int> > tsold = ts;
   std::vector<int> c(ts.size());
@@ -876,13 +994,19 @@ void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & t
   for(int i = 0; i < ts.size(); i++) {
     if(BddOr(p, ts[i].first, ts[i].second) == 1) {
       if(fverbose) std::cout << "\t\tassign " << i << " to 1 " << std::endl;
+      BddDecRef(p, ts[i].first), BddDecRef(p, ts[i].second);
       ts[i].first = 1;
+      ts[i].second = 0;
+      m[tsold[i]] = std::make_pair(ts[i], 0);
       c[i] = 0;
       continue;
     }
     if(BddOr(p, LitNot(ts[i].first), ts[i].second) == 1) {
       if(fverbose) std::cout << "\t\tassign " << i << " to 0 " << std::endl;
+      BddDecRef(p, ts[i].first), BddDecRef(p, ts[i].second);
       ts[i].first = 0;
+      ts[i].second = 0;
+      m[tsold[i]] = std::make_pair(ts[i], 0);
       c[i] = 0;
       continue;
     }
@@ -898,9 +1022,13 @@ void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & t
 	int next = BddCountNodes(p, f2);
 	if(next < prev * maxinc) {
 	  if(fverbose) std::cout << "\t\tbuf merge " << i << " " << j << "(" << prev << "->" << next << ")" << std::endl;
+	  BddIncRef(p, f2);
 	  int g2 = BddAnd( p, ts[i].second, ts[j].second );
+	  BddIncRef(p, g2);
+	  BddDecRef(p, ts[i].first), BddDecRef(p, ts[i].second);
 	  ts[i].first = f2;
 	  ts[i].second = g2;
+	  m[tsold[i]] = std::make_pair(ts[i], 0);
 	  c[j] = i + 1;
 	  continue;
 	}
@@ -910,9 +1038,13 @@ void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & t
 	int next = BddCountNodes(p, f2);
 	if(next < prev * maxinc) {
 	  if(fverbose) std::cout << "\t\txor merge " << i << " " << j << "(" << prev << "->" << next << ")" << std::endl;
+	  BddIncRef(p, f2);
 	  int g2 = BddAnd( p, ts[i].second, ts[j].second );
+	  BddIncRef(p, g2);
+	  BddDecRef(p, ts[i].first), BddDecRef(p, ts[i].second);
 	  ts[i].first = f2;
 	  ts[i].second = g2;
+	  m[tsold[i]] = std::make_pair(ts[i], 0);
 	  c[j] = -(i + 1);
 	  continue;
 	}
@@ -923,47 +1055,50 @@ void BddBreadthMinimize_level( BddMan * p, std::vector<std::pair<int, int> > & t
   std::vector<std::pair<int, int> > tsnew;
   for(int i = 0; i < ts.size(); i++) {
     if(c[i] == i + 1) {
-      if(tsold[i] != ts[i]) {
-	m[tsold[i]] = std::make_pair(ts[i], 0);
-      }
       tsnew.push_back(ts[i]);
     }
-    else if(c[i] == 0) {
-      m[tsold[i]] = std::make_pair(ts[i], 0);
-    }
-    else {
+    else if(c[i] != 0) {
+      BddDecRef(p, ts[i].first), BddDecRef(p, ts[i].second);
       m[tsold[i]] = std::make_pair(ts[abs(c[i]) - 1], c[i] < 0);
     }
   }
   ts = tsnew;
 }
-int BddBreadthMinimize( BddMan * p, int f, int g ) {
+int BddMinimizeLevelTD( BddMan * p, int f, int g ) {
   bool fverbose = 0;
   std::set<std::pair<int, int> > fronts;
   std::map<std::pair<int, int>, std::pair<std::pair<int, int>, bool> > m;
   std::map<std::pair<int, int>, std::pair<std::pair<int, int>, std::pair<int, int> > > cs;
   std::vector<std::pair<int, int> > res;
+  BddIncRef(p, f), BddIncRef(p, g);
   std::pair<int, int> root(f, g);
   fronts.insert(root);
+  // minimize top down
   for(int i = 0; i < p->nVars; i++) {
     if(fverbose) std::cout << "level " << i << std::endl;
     // get nodes in the level
     std::vector<std::pair<int, int> > targets;
-    std::set<std::pair<int, int> > nfronts;
+    std::vector<std::pair<int, int> > nfronts;
     for(auto it = fronts.begin(); it != fronts.end();) {
       if(BddLevel(p, it->first) == i) {
 	targets.push_back(*it);
 	it = fronts.erase(it);
       }
       else if(BddLevel(p, it->second) == i) {
-	nfronts.insert(std::make_pair(it->first, BddAnd(p, BddElse(p, it->second), BddThen(p, it->second))));
+        int t = BddAnd(p, BddElse(p, it->second), BddThen(p, it->second));
+	BddIncRef(p, t);
+	BddDecRef(p, it->second);
+	nfronts.push_back(std::make_pair(it->first, t));
 	it = fronts.erase(it);
       }
       else {
 	++it;
       }
     }
-    fronts.insert(nfronts.begin(), nfronts.end());
+    for(auto t : nfronts) {
+      if(fronts.count(t)) BddDecRef(p, t.first), BddDecRef(p, t.second);
+      else fronts.insert(t);
+    }
     if(fverbose) {
       std::cout << "\ttargets " << targets.size() << std::endl;
       int j = 0;
@@ -976,7 +1111,7 @@ int BddBreadthMinimize( BddMan * p, int f, int g ) {
     // minimize the level
     if(targets.size() > 1) {
       if(fverbose) std::cout << "\tminimize" << std::endl;
-      BddBreadthMinimize_level(p, targets, m);
+      BddMinimizeLevel(p, targets, m);
     }
     if(fverbose) {
       std::cout << "\tres " << targets.size() << std::endl;
@@ -1001,12 +1136,14 @@ int BddBreadthMinimize( BddMan * p, int f, int g ) {
       t1 = std::make_pair(t1f, t1g);
       cs[t] = std::make_pair(t0, t1);
       assert(t0g != 1 || t1g != 1);
-      if(t0g != 1) fronts.insert(t0);
-      if(t1g != 1) fronts.insert(t1);
+      if(t0g != 1 && t0f != 0 && t0f != 1 && !fronts.count(t0))
+	fronts.insert(t0), BddIncRef(p, t0f), BddIncRef(p, t0g);
+      if(t1g != 1 && t1f != 0 && t1f != 1 && !fronts.count(t1))
+	fronts.insert(t1), BddIncRef(p, t1f), BddIncRef(p, t1g);
       res.push_back(t);
     }
   }
-  // construct
+  // construct bottom up
   std::reverse(res.begin(), res.end());
   for(auto t : res) {
     // get previous children
@@ -1017,16 +1154,7 @@ int BddBreadthMinimize( BddMan * p, int f, int g ) {
     std::pair<int, int> t0, t1;
     t0 = cs[t].first;
     t1 = cs[t].second;
-    if(t0.second == 1) {
-      m[t] = std::make_pair(t1, 0);
-      continue;
-    }
-    if(t1.second == 1) {
-      m[t] = std::make_pair(t0, 0);
-      continue;
-    }
     // check new children
-    if(!m.count(t0) && !m.count(t1)) continue;
     bool c0 = 0, c1 = 0;
     while(m.count(t0)) {
       if(t0 == m[t0].first) {
@@ -1046,109 +1174,39 @@ int BddBreadthMinimize( BddMan * p, int f, int g ) {
       t1 = m[t1].first;
     }
     t1.first = LitNotCond(t1.first, c1);
+    // trivial cases
+    if(t0 == cs[t].first && t1 == cs[t].second) {
+      m[t] = std::make_pair(t, 0);
+      continue;
+    }
+    if(t0.second == 1) {
+      BddIncRef(p, t1.first), BddIncRef(p, t1.second);
+      m[t] = std::make_pair(t1, 0);
+      continue;
+    }
+    if(t1.second == 1) {
+      BddIncRef(p, t0.first), BddIncRef(p, t0.second);
+      m[t] = std::make_pair(t0, 0);
+      continue;
+    }
     // create new node
     int tf, tg;
     if(t0.first == t1.first) tf = t0.first;
     else tf = BddUniqueCreate(p, v, t1.first, t0.first);
+    BddIncRef(p, tf);
     if(t0.second == t1.second) tg = t0.second;
     else tg = BddUniqueCreate(p, v, t1.second, t0.second);
+    BddIncRef(p, tg);
     m[t] = std::make_pair(std::make_pair(tf, tg), 0);
+    assert(t != m[t].first);
+  }
+  for(auto t : res) {
+    BddDecRef(p, t.first), BddDecRef(p, t.second);
+    if(m[t].first == t) continue;
+    BddDecRef(p, m[t].first.first), BddDecRef(p, m[t].first.second);
   }
   if(m.count(root)) return LitNotCond(m[root].first.first, m[root].second);
   return root.first;
-}
-int BddBreadthMinimize2( BddMan * p, int f, int g ) {
-  std::vector<std::pair<int, int> > targets;
-  std::vector<std::vector<std::pair<int, int> > > nodes(p->nVars);
-  std::map<std::pair<int, int>, std::pair<std::pair<int, int>, bool> > m;
-  std::map<std::pair<int, int>, std::pair<std::pair<int, int>, std::pair<int, int> > > cs;
-  std::pair<int, int> root(f, g);
-  targets.push_back(root);
-  // get nodes in each level
-  for(int i = 0; i < targets.size(); i++) {
-    auto t = targets[i];
-    if(t.second == 1) continue;
-    if(t.first == 0 || t.first == 1) continue;
-    //std::cout << t.first << "," << t.second << std::endl;
-    int l = std::min(BddLevel(p, t.first), BddLevel(p, t.second));
-    nodes[l].push_back(t);
-    int v, t0f, t0g, t1f, t1g;
-    if(BddLevel(p, t.first) == l) v = BddVar(p, t.first), t0f = BddElse(p, t.first), t1f = BddThen(p, t.first);
-    else t0f = t1f = t.first;
-    if(BddLevel(p, t.second) == l) v = BddVar(p, t.second), t0g = BddElse(p, t.second), t1g = BddThen(p, t.second);
-    else t0g = t1g = t.second;
-    //std::cout << t0f << "," << t0g << " " << t1f << "," << t1g << std::endl;
-    std::pair<int, int> t0, t1;
-    t0 = std::make_pair(t0f, t0g);
-    t1 = std::make_pair(t1f, t1g);
-    cs[t] = std::make_pair(t0, t1);
-    targets.push_back(t0);
-    targets.push_back(t1);
-  }
-  // minimize each level
-  for(int l = p->nVars - 1; l >= 0; l--) {
-    int v = BddLevel2Var(p, l);
-    // build current nodes
-    std::set<std::pair<int, int> > s;
-    for(auto t : nodes[l]) {
-      std::pair<int, int> t0, t1;
-      t0 = cs[t].first;
-      t1 = cs[t].second;
-      // no change
-      if(!m.count(t0) && !m.count(t1)) {
-	s.insert(t);
-	continue;
-      }
-      // get new children
-      int c0 = 0, c1 = 0;
-      while(m.count(t0)) {
-	if(t0 == m[t0].first) {
-	  assert(!m[t0].second);
-	  break;
-	}
-	c0 ^= m[t0].second;
-	t0 = m[t0].first;
-      }
-      t0.first = LitNotCond(t0.first, c0);
-      while(m.count(t1)) {
-	if(t1 == m[t1].first) {
-	  assert(!m[t1].second);
-	  break;
-	}
-	c1 ^= m[t1].second;
-	t1 = m[t1].first;
-      }
-      t1.first = LitNotCond(t1.first, c1);
-      // create new node
-      int tf, tg;
-      if(t0.first == t1.first) tf = t0.first;
-      else tf = BddUniqueCreate(p, v, t1.first, t0.first);
-      if(t0.second == t1.second) tg = t0.second;
-      else tg = BddUniqueCreate(p, v, t1.second, t0.second);
-      m[t] = std::make_pair(std::make_pair(tf, tg), 0);
-      s.insert(m[t].first);
-    }
-    std::cout << "lev " << l << " num " << s.size() << std::endl;
-    // minimize the level
-    targets.clear();
-    for(auto t : s) {
-      targets.push_back(t);
-    }
-    if(targets.size() > 1) {
-      BddBreadthMinimize_level(p, targets, m);
-    }
-  }
-  // get new root
-  int c = 0;
-  while(m.count(root)) {
-    if(root == m[root].first) {
-      assert(!m[root].second);
-      break;
-    }
-    c ^= m[root].second;
-    root = m[root].first;
-  }
-  return LitNotCond(root.first, c);
 }
 
 /**Function*************************************************************
@@ -1158,51 +1216,40 @@ int BddBreadthMinimize2( BddMan * p, int f, int g ) {
   SideEffects []
   SeeAlso     []
 ***********************************************************************/
-void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynamic_bitset<> const & output, std::string aigname, std::vector<boost::dynamic_bitset<> > const * einputs = NULL, boost::dynamic_bitset<> const * eoutput = NULL) {
+void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynamic_bitset<> const & output, std::string aigname) {
   int ninputs = inputs.size();
-  BddMan * p = BddManAlloc(ninputs + 1, 25);
+  BddMan * p = BddManAlloc(ninputs + 1, 20);
 
   int onset = 0;
+  BddIncRef(p, onset);
   int offset = 0;
+  BddIncRef(p, offset);
+  int tmp;
   for(int i = 0; i < inputs[0].size(); i++) {
     int minterm = 1;
+    BddIncRef(p, minterm);
     for(int j = 0; j < inputs.size(); j++) {
       if(inputs[j][i]) {
-	minterm = BddAnd(p, minterm, BddIthVar(j));
+	tmp = BddAnd(p, minterm, BddIthVar(j));
       }
       else {
-	minterm = BddAnd(p, minterm, LitNot(BddIthVar(j)));
+	tmp = BddAnd(p, minterm, LitNot(BddIthVar(j)));
       }
+      BddIncRef(p, tmp);
+      BddDecRef(p, minterm);
+      minterm = tmp;
     }
     if(output[i]) {
-      onset = BddOr(p, onset, minterm);
+      tmp = BddOr(p, onset, minterm);
+      BddIncRef(p, tmp);
+      BddDecRef(p, onset), BddDecRef(p, minterm);
+      onset = tmp;
     }
     else {
-      offset = BddOr(p, offset, minterm);
-    }
-  }
-
-  int eonset = 0;
-  int eoffset = 0;
-  int etotal = 0;
-  if(eoutput) {
-    etotal = (*einputs)[0].size();
-    for(int i = 0; i < (*einputs)[0].size(); i++) {
-      int minterm = 1;
-      for(int j = 0; j < (*einputs).size(); j++) {
-	if((*einputs)[j][i]) {
-	  minterm = BddAnd(p, minterm, BddIthVar(j));
-	}
-	else {
-	  minterm = BddAnd(p, minterm, LitNot(BddIthVar(j)));
-	}
-      }
-      if((*eoutput)[i]) {
-	eonset = BddOr(p, eonset, minterm);
-      }
-      else {
-	eoffset = BddOr(p, eoffset, minterm);
-      }
+      tmp = BddOr(p, offset, minterm);
+      BddIncRef(p, tmp);
+      BddDecRef(p, offset), BddDecRef(p, minterm);
+      offset = tmp;
     }
   }
 
@@ -1213,79 +1260,38 @@ void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynam
   int x;
   int careset;
 
-  /*  
   careset = BddOr(p, onset, offset);
+  BddIncRef(p, careset);
 
   x = BddSqueeze(p, onset, LitNot(offset), 0);
-  std::cout << "squeeze : " << BddCountNodes(p, x);
-  assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0);
-  if(etotal) {
-    int error = BddOr(p, BddAnd(p, eonset, LitNot(x)), BddAnd(p, eoffset, x));
-    std::cout << " (" << 100 * (1 - ((double)BddCountOnes(p, error) / etotal)) << "%)";
-  }
-  std::cout << std::endl;
-
+  std::cout << "squeeze : " << BddCountNodes(p, x) << std::endl;
+  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
+  
   x = BddSqueeze(p, onset, LitNot(offset), 1);
-  std::cout << "squeeze inter : " << BddCountNodes(p, x);
-  assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0);
-  if(etotal) {
-    int error = BddOr(p, BddAnd(p, eonset, LitNot(x)), BddAnd(p, eoffset, x));
-    std::cout << " (" << 100 * (1 - ((double)BddCountOnes(p, error) / etotal)) << "%)";
-  }
-  std::cout << std::endl;
-
+  std::cout << "squeeze inter : " << BddCountNodes(p, x) << std::endl;
+  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
+  
   x = BddRestrict(p, onset, careset);
-  std::cout << "restrict : " << BddCountNodes(p, x);
-  if(etotal) {
-    int error = BddOr(p, BddAnd(p, eonset, LitNot(x)), BddAnd(p, eoffset, x));
-    std::cout << " (" << 100 * (1 - ((double)BddCountOnes(p, error) / etotal)) << "%)";
-  }
-  std::cout << std::endl;
+  std::cout << "restrict : " << BddCountNodes(p, x) << std::endl;
+  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
 
   x = BddMinimize3(p, onset, LitNot(careset), 0);
-  std::cout << "minimize : " << BddCountNodes(p, x);
-  assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0);
-  if(etotal) {
-    int error = BddOr(p, BddAnd(p, eonset, LitNot(x)), BddAnd(p, eoffset, x));
-    std::cout << " (" << 100 * (1 - ((double)BddCountOnes(p, error) / etotal)) << "%)";
-  }
-  std::cout << std::endl;
-
+  std::cout << "minimize : " << BddCountNodes(p, x) << std::endl;
+  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
+  
   x = BddMinimize3(p, onset, LitNot(careset), 1);
-  std::cout << "minimize inter : " << BddCountNodes(p, x);
-  assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0);
-  if(etotal) {
-    int error = BddOr(p, BddAnd(p, eonset, LitNot(x)), BddAnd(p, eoffset, x));
-    std::cout << " (" << 100 * (1 - ((double)BddCountOnes(p, error) / etotal)) << "%)";
-  }
-  std::cout << std::endl;
-
-  x = BddBreadthMinimize(p, onset, LitNot(careset));
-  std::cout << "bminimize : " << BddCountNodes(p, x);
-  assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0);
-  if(etotal) {
-    int error = BddOr(p, BddAnd(p, eonset, LitNot(x)), BddAnd(p, eoffset, x));
-    std::cout << " (" << 100 * (1 - ((double)BddCountOnes(p, error) / etotal)) << "%)";
-  }
-  std::cout << std::endl;
-
+  std::cout << "minimize inter : " << BddCountNodes(p, x) << std::endl;
+  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
+  
+  x = BddMinimizeLevelTD(p, onset, LitNot(careset));
+  std::cout << "bminimize : " << BddCountNodes(p, x) << std::endl;
+  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
+  
   x = BddMinimize3(p, onset, LitNot(careset), 0);
-  std::cout << "bminimize prep : " << BddCountNodes(p, x);
-  assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0);
-  if(etotal) {
-    int error = BddOr(p, BddAnd(p, eonset, LitNot(x)), BddAnd(p, eoffset, x));
-    std::cout << " (" << 100 * (1 - ((double)BddCountOnes(p, error) / etotal)) << "%)";
-  }
-  std::cout << std::endl;
-  x = BddBreadthMinimize(p, x, LitNot(careset));
-  std::cout << "          main : " << BddCountNodes(p, x);
-  assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0);
-  if(etotal) {
-    int error = BddOr(p, BddAnd(p, eonset, LitNot(x)), BddAnd(p, eoffset, x));
-    std::cout << " (" << 100 * (1 - ((double)BddCountOnes(p, error) / etotal)) << "%)";
-  }
-  std::cout << std::endl;
-  */
+  x = BddMinimizeLevelTD(p, x, LitNot(careset));
+  std::cout << "bmin with pre : " << BddCountNodes(p, x) << std::endl;
+  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
+  
   /*
   // reorder
   x = BddOr(p, BddAnd(p, onset, BddIthVar(ninputs)), BddAnd(p, offset, LitNot(BddIthVar(ninputs))));
@@ -1310,15 +1316,24 @@ void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynam
     std::cout << "pi" << BddLevel2Var(p, i) << ", ";
   std::cout << std::endl;
   */
+  /*
   // minimize
   careset = BddOr(p, onset, offset);
   x = BddMinimize3(p, onset, LitNot(careset), 0);
-  x = BddBreadthMinimize(p, x, LitNot(careset));
+  x = BddMinimizeLevelTD(p, x, LitNot(careset));
   std::cout << "minimize : " << BddCountNodes(p, x) << std::endl;
-
+  */
   aig = GenAig( p, x, ninputs );
   
   aig->write(aigname);
+
+  BddDecRef(p, onset);
+  BddDecRef(p, offset);
+  BddDecRef(p, careset);
+  //BddDecRef(p, x);
+
+  BddPrintRef(p);
+  assert(p->pRefs[0] == 0);
 
   delete aig;
   BddManFree(p);
