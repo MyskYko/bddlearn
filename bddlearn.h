@@ -34,6 +34,7 @@ struct BddMan_
 
   int * pEdges;
   std::vector<std::list<int> > nodelist;
+  unsigned short reolowvar;
 };
 
 int Var2Lit( int i, bool c ) { return i << 1 + (int)c; }
@@ -205,7 +206,6 @@ void BddManFree( BddMan * p )
     free( p->pRefs );
     free( p->pVars );
     free( p->pLevels );
-    if(p->pEdges) free(p->pEdges);
     free( p );
 }
 
@@ -414,6 +414,25 @@ void BddDeregister( BddMan * p, int a )
 void BddGarbageCollect( BddMan * p )
 {
   int count = 0;
+  if(p->pEdges) { // during reorder
+    // from list
+    for(auto it = p->nodelist[p->reolowvar].begin(); it != p->nodelist[p->reolowvar].end();) {
+      if(p->pEdges[*it] == 0) it = p->nodelist[p->reolowvar].erase(it);
+      else it++;
+    }
+    // from table
+    for(int i = p->nVars + 1; i < p->nObjs; i++) {
+      if(!p->pEdges[i]) {
+	BddDeregister(p, i);
+	p->pVars[i] = 0xffff;
+	p->pNexts[i] = 0;
+	count++;
+	if(p->nMinRemoved > i) p->nMinRemoved = i;
+      }
+    }
+    std::cout << "delete " << count << std::endl;
+    return;
+  }
   for(int i = p->nVars + 1; i < p->nObjs; i++)
     if(p->pRefs[i])
       BddMark_rec(p, Var2Lit(i, 0));
@@ -429,6 +448,7 @@ void BddGarbageCollect( BddMan * p )
   for(int i = p->nVars + 1; i < p->nObjs; i++)
     if(p->pRefs[i])
       BddUnmark_rec(p, Var2Lit(i, 0));
+  std::cout << "delete " << count << std::endl;
   BddCacheClear(p);
 }
 
@@ -467,16 +487,16 @@ int BddSwap( BddMan * p, int i )
 {
   assert(!p->nodelist.empty());
   assert(p->pEdges);
-  int count = 0;
   int uv = BddLevel2Var(p, i);
   int lv = BddLevel2Var(p, i + 1);
+  p->reolowvar = lv;
+  int count = p->nodelist[uv].size() + p->nodelist[lv].size();
   // extract up nodes related to low nodes
   std::list<int> extracted;
   for(auto it = p->nodelist[uv].begin(); it != p->nodelist[uv].end();) {
     if(BddVar(p, p->pObjs[*it+*it]) == lv || BddVar(p, p->pObjs[*it+*it+1]) == lv) {
       extracted.push_back(*it);
       it = p->nodelist[uv].erase(it);
-      count--;
     }
     else it++;
   }
@@ -488,17 +508,9 @@ int BddSwap( BddMan * p, int i )
     // get grandchildren with dec edges
     int t, e, tt, te, et, ee;
     t = p->pObjs[a+a], e = p->pObjs[a+a+1];
-    BddDecEdge(p, t);
-    if(BddVar(p, t) == lv) {
-      tt = BddThen(p, t), te = BddElse(p, t);
-      if(BddEdge(p, t) == 0) BddDecEdge(p, tt), BddDecEdge(p, te);
-    }
+    if(BddVar(p, t) == lv) tt = BddThen(p, t), te = BddElse(p, t);
     else tt = te = t;
-    BddDecEdge(p, e);
-    if(BddVar(p, e) == lv) {
-      et = BddThen(p, e), ee = BddElse(p, e);
-      if(BddEdge(p, e) == 0) BddDecEdge(p, et), BddDecEdge(p, ee);
-    }
+    if(BddVar(p, e) == lv) et = BddThen(p, e), ee = BddElse(p, e);
     else et = ee = e;
     // create new children with inc edges, and push them into list
     int nt, ne;
@@ -506,16 +518,20 @@ int BddSwap( BddMan * p, int i )
     else {
       nt = BddUniqueCreate(p, uv, tt, et);
       if(BddEdge(p, nt) == 0)
-	BddIncEdge(p, tt), BddIncEdge(p, et), p->nodelist[uv].push_back(Lit2Var(nt)), count++;
+	BddIncEdge(p, tt), BddIncEdge(p, et), p->nodelist[uv].push_back(Lit2Var(nt));
     }
     BddIncEdge(p, nt);
     if(ee == te) ne = ee;
     else {
       ne = BddUniqueCreate(p, uv, te, ee);
       if(BddEdge(p, ne) == 0)
-	BddIncEdge(p, te), BddIncEdge(p, ee), p->nodelist[uv].push_back(Lit2Var(ne)), count++;
+	BddIncEdge(p, te), BddIncEdge(p, ee), p->nodelist[uv].push_back(Lit2Var(ne));
     }
     BddIncEdge(p, ne);
+    BddDecEdge(p, t);
+    if(BddVar(p, t) == lv && BddEdge(p, t) == 0) BddDecEdge(p, tt), BddDecEdge(p, te);
+    BddDecEdge(p, e);
+    if(BddVar(p, e) == lv && BddEdge(p, e) == 0) BddDecEdge(p, et), BddDecEdge(p, ee);
     // reregister the new node with new children, and push it into list
     BddDeregister(p, a);
     int Var, Then, Else;
@@ -528,20 +544,24 @@ int BddSwap( BddMan * p, int i )
     p->pVars[*q] = Var;
     p->pObjs[*q+*q] = Then;
     p->pObjs[*q+*q+1] = Else;
-    p->nodelist[lv].push_back(a), count++;
+    p->nodelist[lv].push_back(a);
   }
   // erase zero edge nodes
   for(auto it = p->nodelist[lv].begin(); it != p->nodelist[lv].end();) {
-    if(p->pEdges[*it] == 0) it = p->nodelist[lv].erase(it), count--;
+    if(p->pEdges[*it] == 0) it = p->nodelist[lv].erase(it);
     else it++;
   }
-  return count;
+  return p->nodelist[uv].size() + p->nodelist[lv].size() - count;
 }
 void BddSiftReorder( BddMan * p, int x = 0 )
 {
   bool freoverbose = 0;
-  assert(!p->nodelist.empty());
-  assert(p->pEdges);
+  
+  p->pEdges = (int*)calloc( p->nObjsAlloc, sizeof(int) );
+  p->nodelist.resize(p->nVars);
+  for(int i = p->nVars + 1; i < p->nObjs; i++)
+    if(p->pRefs[i])
+      BddRecursiveRef(p, Var2Lit(i, 0));
 
   int basecount = 0;
   std::vector<int> dorder;
@@ -652,6 +672,9 @@ void BddSiftReorder( BddMan * p, int x = 0 )
   }
   
   BddCacheClear(p);
+  free(p->pEdges);
+  p->pEdges = NULL;
+  p->nodelist.clear();
 }  
 
 /**Function*************************************************************
@@ -1218,7 +1241,7 @@ int BddMinimizeLevelTD( BddMan * p, int f, int g ) {
 ***********************************************************************/
 void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynamic_bitset<> const & output, std::string aigname) {
   int ninputs = inputs.size();
-  BddMan * p = BddManAlloc(ninputs + 1, 20);
+  BddMan * p = BddManAlloc(ninputs + 1, 25);
 
   int onset = 0;
   BddIncRef(p, onset);
@@ -1256,7 +1279,6 @@ void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynam
   std::cout << "onset : " << BddCountNodes(p, onset) << std::endl;
   std::cout << "offset : " << BddCountNodes(p, offset) << std::endl;
 
-  aigman * aig;
   int x;
   int careset;
 
@@ -1291,50 +1313,41 @@ void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynam
   x = BddMinimizeLevelTD(p, x, LitNot(careset));
   std::cout << "bmin with pre : " << BddCountNodes(p, x) << std::endl;
   BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
+
+  BddDecRef(p, careset);
   
-  /*
   // reorder
-  x = BddOr(p, BddAnd(p, onset, BddIthVar(ninputs)), BddAnd(p, offset, LitNot(BddIthVar(ninputs))));
-  //x = onset;
+  //x = BddOr(p, BddAnd(p, onset, BddIthVar(ninputs)), BddAnd(p, offset, LitNot(BddIthVar(ninputs))));
+  x = onset;
   //x = offset;
-  
+
+  BddIncRef(p, x);
   std::cout << "before reo : " << BddCountNodes(p, x) << std::endl;
-  
-  p->pEdges = (int*)calloc( p->nObjsAlloc, sizeof(int) );
-  p->nodelist.resize(p->nVars);
-
-  BddRecursiveRef(p, onset);
-  BddRecursiveRef(p, offset);
-  BddRecursiveRef(p, x);
-
   BddSiftReorder(p, x);
-
   std::cout << "after reo : " << BddCountNodes(p, x) << std::endl;
-  
   std::cout << "ordering : " << std::endl;
   for(int i = 0; i < p->nVars; i++)
     std::cout << "pi" << BddLevel2Var(p, i) << ", ";
   std::cout << std::endl;
-  */
-  /*
+  BddDecRef(p, x);
+  
   // minimize
   careset = BddOr(p, onset, offset);
+  BddIncRef(p, careset);
   x = BddMinimize3(p, onset, LitNot(careset), 0);
   x = BddMinimizeLevelTD(p, x, LitNot(careset));
   std::cout << "minimize : " << BddCountNodes(p, x) << std::endl;
-  */
-  aig = GenAig( p, x, ninputs );
-  
-  aig->write(aigname);
 
+  // write output;
+  aigman * aig = GenAig( p, x, ninputs );
+  aig->write(aigname);
+  delete aig;
+
+  // verify and quit
   BddDecRef(p, onset);
   BddDecRef(p, offset);
   BddDecRef(p, careset);
-  //BddDecRef(p, x);
-
   BddPrintRef(p);
   assert(p->pRefs[0] == 0);
-
-  delete aig;
   BddManFree(p);
 }
