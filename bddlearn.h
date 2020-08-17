@@ -43,8 +43,8 @@ int LitNotCond( int i, bool c ) { return i ^ (int)c; }
 int BddIthVar( int i ) { return Var2Lit(i + 1, 0); }
 unsigned BddHash( int Arg0, int Arg1, int Arg2 ) { return 12582917 * Arg0 + 4256249 * Arg1 + 741457 * Arg2; }
 
-int Var2Level( BddMan * p, int i ) { return p->pLevels[i]; }
-int Level2Var( BddMan * p, int i ) {
+int BddVar2Level( BddMan * p, int i ) { return p->pLevels[i]; }
+int BddLevel2Var( BddMan * p, int i ) {
   for(int v = 0; v < p->nVars; v++)
     if(i == p->pLevels[v])
       return v;
@@ -52,7 +52,7 @@ int Level2Var( BddMan * p, int i ) {
 }
 
 int BddVar( BddMan * p, int i ) { return p->pVars[Lit2Var(i)]; }
-int BddLevel( BddMan * p, int i ) { return Var2Level(p, BddVar(p, i)); }
+int BddLevel( BddMan * p, int i ) { return BddVar2Level(p, BddVar(p, i)); }
 int BddThen( BddMan * p, int i ) { return LitNotCond(p->pObjs[LitRegular(i)], LitIsCompl(i)); }
 int BddElse( BddMan * p, int i ) { return LitNotCond(p->pObjs[LitRegular(i)+1], LitIsCompl(i)); }
 
@@ -94,8 +94,8 @@ int BddUniqueCreateInt( BddMan * p, int Var, int Then, int Else )
 int BddUniqueCreate( BddMan * p, int Var, int Then, int Else )
 {
     assert( Var >= 0 && Var < p->nVars );
-    assert( Var2Level(p, Var) < BddLevel(p, Then) );
-    assert( Var2Level(p, Var) < BddLevel(p, Else) );
+    assert( BddVar2Level(p, Var) < BddLevel(p, Then) );
+    assert( BddVar2Level(p, Var) < BddLevel(p, Else) );
     if ( Then == Else )
         return Else;
     if ( !LitIsCompl(Else) )
@@ -269,8 +269,8 @@ int BddSwap( BddMan * p, int i )
   assert(!p->nodelist.empty());
   assert(p->pEdges);
   int count = 0;
-  int uv = Level2Var(p, i);
-  int lv = Level2Var(p, i + 1);
+  int uv = BddLevel2Var(p, i);
+  int lv = BddLevel2Var(p, i + 1);
   // extract up nodes related to low nodes
   std::list<int> extracted;
   for(auto it = p->nodelist[uv].begin(); it != p->nodelist[uv].end();) {
@@ -391,46 +391,46 @@ void BddSiftReorder( BddMan * p, int x = 0 )
     if(freoverbose) std::cout << "sift " << v << std::endl;
     
     int mindiff = dnodes;
-    int minlevel = Var2Level(p, v);
-    if(freoverbose) std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
+    int minlevel = BddVar2Level(p, v);
+    if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
 
     // go down
-    bool godown = Var2Level(p, v) > (p->nVars >> 1);
+    bool godown = BddVar2Level(p, v) > (p->nVars >> 1);
     if(godown) {
-      while(Var2Level(p, v) < p->nVars - 1) {
-	dnodes += BddSwap(p, Var2Level(p, v));
+      while(BddVar2Level(p, v) < p->nVars - 1) {
+	dnodes += BddSwap(p, BddVar2Level(p, v));
 	if(x) dnodes = BddCountNodes(p, x) - basecount;
-	if(freoverbose) std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
+	if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
 	if(basecount * 0.1 < dnodes) break;
 	if(mindiff > dnodes) {
 	  mindiff = dnodes;
-	  minlevel = Var2Level(p, v);
+	  minlevel = BddVar2Level(p, v);
 	}
       }
     }
 
     // go up
-    while(Var2Level(p, v) > 0) {
-      dnodes += BddSwap(p, Var2Level(p, v) - 1);
+    while(BddVar2Level(p, v) > 0) {
+      dnodes += BddSwap(p, BddVar2Level(p, v) - 1);
       if(x) dnodes = BddCountNodes(p, x) - basecount;
-      if(freoverbose) std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
+      if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
       if(basecount * 0.1 < dnodes) break;
       if(mindiff > dnodes) {
 	mindiff = dnodes;
-	minlevel = Var2Level(p, v);
+	minlevel = BddVar2Level(p, v);
       }
     }      
     
     // go down
     if(!godown) {
-      while(Var2Level(p, v) < p->nVars - 1) {
-	dnodes += BddSwap(p, Var2Level(p, v));
+      while(BddVar2Level(p, v) < p->nVars - 1) {
+	dnodes += BddSwap(p, BddVar2Level(p, v));
 	if(x) dnodes = BddCountNodes(p, x) - basecount;
-	if(freoverbose) std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
+	if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
 	if(basecount * 0.1 < dnodes) break;
 	if(mindiff > dnodes) {
 	  mindiff = dnodes;
-	  minlevel = Var2Level(p, v);
+	  minlevel = BddVar2Level(p, v);
 	}
       }
     }
@@ -438,18 +438,18 @@ void BddSiftReorder( BddMan * p, int x = 0 )
     // go min
     if(godown) {
       // go down
-      while(Var2Level(p, v) < minlevel) {
-	dnodes += BddSwap(p, Var2Level(p, v));
+      while(BddVar2Level(p, v) < minlevel) {
+	dnodes += BddSwap(p, BddVar2Level(p, v));
 	if(x) dnodes = BddCountNodes(p, x) - basecount;
-	if(freoverbose) std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
+	if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
       }
     }
     else {
       // go up
-      while(Var2Level(p, v) > minlevel) {
-	dnodes += BddSwap(p, Var2Level(p, v) - 1);
+      while(BddVar2Level(p, v) > minlevel) {
+	dnodes += BddSwap(p, BddVar2Level(p, v) - 1);
 	if(x) dnodes = BddCountNodes(p, x) - basecount;
-	if(freoverbose) std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
+	if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
       }
     }
   }
@@ -1088,7 +1088,7 @@ int BddBreadthMinimize2( BddMan * p, int f, int g ) {
   }
   // minimize each level
   for(int l = p->nVars - 1; l >= 0; l--) {
-    int v = Level2Var(p, l);
+    int v = BddLevel2Var(p, l);
     // build current nodes
     std::set<std::pair<int, int> > s;
     for(auto t : nodes[l]) {
@@ -1212,9 +1212,11 @@ void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynam
 
   aigman * aig;
   int x;
-  int careset = BddOr(p, onset, offset);
+  int careset;
 
   /*  
+  careset = BddOr(p, onset, offset);
+
   x = BddSqueeze(p, onset, LitNot(offset), 0);
   std::cout << "squeeze : " << BddCountNodes(p, x);
   assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0);
@@ -1285,28 +1287,32 @@ void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynam
   }
   std::cout << std::endl;
   */
-
+  /*
   // reorder
-  int outvalue = BddIthVar(ninputs);
-  x = BddOr(p, BddAnd(p, onset, outvalue), BddAnd(p, offset, LitNot(outvalue)));
+  x = BddOr(p, BddAnd(p, onset, BddIthVar(ninputs)), BddAnd(p, offset, LitNot(BddIthVar(ninputs))));
+  //x = onset;
+  //x = offset;
+  
   std::cout << "before reo : " << BddCountNodes(p, x) << std::endl;
   
   p->pEdges = (int*)calloc( p->nObjsAlloc, sizeof(int) );
   p->nodelist.resize(p->nVars);
 
   BddRecursiveRef(p, onset);
-  BddRecursiveRef(p, careset);
+  BddRecursiveRef(p, offset);
   BddRecursiveRef(p, x);
-  
+
   BddSiftReorder(p, x);
 
   std::cout << "after reo : " << BddCountNodes(p, x) << std::endl;
+  
   std::cout << "ordering : " << std::endl;
   for(int i = 0; i < p->nVars; i++)
-    std::cout << "pi" << Level2Var(p, i) << ", ";
+    std::cout << "pi" << BddLevel2Var(p, i) << ", ";
   std::cout << std::endl;
-
+  */
   // minimize
+  careset = BddOr(p, onset, offset);
   x = BddMinimize3(p, onset, LitNot(careset), 0);
   x = BddBreadthMinimize(p, x, LitNot(careset));
   std::cout << "minimize : " << BddCountNodes(p, x) << std::endl;
