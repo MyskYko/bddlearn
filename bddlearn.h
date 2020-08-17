@@ -342,6 +342,7 @@ int BddCountNodes( BddMan * p, int i );
 int BddCountNodes( BddMan * p, int i, std::vector<int> & v );
 void BddSiftReorder( BddMan * p, int x = 0 )
 {
+  bool freoverbose = 0;
   assert(!p->nodelist.empty());
   assert(p->pEdges);
 
@@ -387,11 +388,11 @@ void BddSiftReorder( BddMan * p, int x = 0 )
   int dnodes = 0;
   
   for(int v : dorder) {
-    std::cout << "sift " << v << std::endl;
+    if(freoverbose) std::cout << "sift " << v << std::endl;
     
     int mindiff = dnodes;
     int minlevel = Var2Level(p, v);
-    std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
+    if(freoverbose) std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
 
     // go down
     bool godown = Var2Level(p, v) > (p->nVars >> 1);
@@ -399,7 +400,7 @@ void BddSiftReorder( BddMan * p, int x = 0 )
       while(Var2Level(p, v) < p->nVars - 1) {
 	dnodes += BddSwap(p, Var2Level(p, v));
 	if(x) dnodes = BddCountNodes(p, x) - basecount;
-	std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
+	if(freoverbose) std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
 	if(basecount * 0.1 < dnodes) break;
 	if(mindiff > dnodes) {
 	  mindiff = dnodes;
@@ -412,7 +413,7 @@ void BddSiftReorder( BddMan * p, int x = 0 )
     while(Var2Level(p, v) > 0) {
       dnodes += BddSwap(p, Var2Level(p, v) - 1);
       if(x) dnodes = BddCountNodes(p, x) - basecount;
-      std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
+      if(freoverbose) std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
       if(basecount * 0.1 < dnodes) break;
       if(mindiff > dnodes) {
 	mindiff = dnodes;
@@ -425,7 +426,7 @@ void BddSiftReorder( BddMan * p, int x = 0 )
       while(Var2Level(p, v) < p->nVars - 1) {
 	dnodes += BddSwap(p, Var2Level(p, v));
 	if(x) dnodes = BddCountNodes(p, x) - basecount;
-	std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
+	if(freoverbose) std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
 	if(basecount * 0.1 < dnodes) break;
 	if(mindiff > dnodes) {
 	  mindiff = dnodes;
@@ -440,7 +441,7 @@ void BddSiftReorder( BddMan * p, int x = 0 )
       while(Var2Level(p, v) < minlevel) {
 	dnodes += BddSwap(p, Var2Level(p, v));
 	if(x) dnodes = BddCountNodes(p, x) - basecount;
-	std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
+	if(freoverbose) std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
       }
     }
     else {
@@ -448,7 +449,7 @@ void BddSiftReorder( BddMan * p, int x = 0 )
       while(Var2Level(p, v) > minlevel) {
 	dnodes += BddSwap(p, Var2Level(p, v) - 1);
 	if(x) dnodes = BddCountNodes(p, x) - basecount;
-	std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
+	if(freoverbose) std::cout << "\tlevel " << Var2Level(p, v) << " nodes " << basecount + dnodes << std::endl;
       }
     }
   }
