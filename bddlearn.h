@@ -32,7 +32,7 @@ struct BddMan_
 
   int nMinRemoved;
 
-  int * pEdges;
+  unsigned * pEdges;
   std::vector<std::list<int> > nodelist;
   unsigned short reolowvar;
 };
@@ -63,13 +63,18 @@ int BddElse( BddMan * p, int i ) { return LitNotCond(p->pObjs[LitRegular(i)+1], 
 int BddMark( BddMan * p, int i ) { return p->pMark[Lit2Var(i)]; }
 void BddSetMark( BddMan * p, int i, int m ){ p->pMark[Lit2Var(i)] = m; }
 
-int BddEdge( BddMan * p, int i ) { return p->pEdges[Lit2Var(i)]; }
-void BddIncEdge( BddMan *p, int i ) { if(i == 0 || i == 1) return; p->pEdges[Lit2Var(i)]++; assert(p->pEdges[Lit2Var(i)] > 0); }
-void BddDecEdge( BddMan *p, int i ) { if(i == 0 || i == 1) return; p->pEdges[Lit2Var(i)]--; assert(p->pEdges[Lit2Var(i)] >= 0); }
+unsigned BddEdge( BddMan * p, int i ) { return p->pEdges[Lit2Var(i)]; }
+void BddIncEdge( BddMan *p, int i ) { if(i == 0 || i == 1 || p->pEdges[Lit2Var(i)] == 0xffffffff) return; p->pEdges[Lit2Var(i)]++; }
+void BddDecEdge( BddMan *p, int i ) { if(i == 0 || i == 1 || p->pEdges[Lit2Var(i)] == 0xffffffff) return; assert(p->pEdges[Lit2Var(i)]); p->pEdges[Lit2Var(i)]--; }
+
+void BddIncPEdge( BddMan *p, int i ) { if(i == 0 || i == 1 || (p->pEdges[Lit2Var(i)] & 0xffff) == 0xffff) return; p->pEdges[Lit2Var(i)]++; }
+void BddDecPEdge( BddMan *p, int i ) { if(i == 0 || i == 1 || (p->pEdges[Lit2Var(i)] & 0xffff) == 0xffff) return; assert(p->pEdges[Lit2Var(i)] & 0xffff); p->pEdges[Lit2Var(i)]--; }
+void BddIncNEdge( BddMan *p, int i ) { if(i == 0 || i == 1 || (p->pEdges[Lit2Var(i)] >> 16) == 0xffff) return; p->pEdges[Lit2Var(i)] += 0x10000; }
+void BddDecNEdge( BddMan *p, int i ) { if(i == 0 || i == 1 || (p->pEdges[Lit2Var(i)] >> 16) == 0xffff) return; assert(p->pEdges[Lit2Var(i)] >> 16); p->pEdges[Lit2Var(i)] -= 0x10000; }
 
 int BddRef( BddMan * p, int i ) { return p->pRefs[Lit2Var(i)]; }
 void BddIncRef( BddMan *p, int i ) { if(p->pRefs[Lit2Var(i)] == 0xffff) return; p->pRefs[Lit2Var(i)]++; }
-void BddDecRef( BddMan *p, int i ) { if(p->pRefs[Lit2Var(i)] == 0xffff) return; p->pRefs[Lit2Var(i)]--; assert(p->pRefs[Lit2Var(i)] != 0xffff); }
+void BddDecRef( BddMan *p, int i ) { if(p->pRefs[Lit2Var(i)] == 0xffff) return; assert(p->pRefs[Lit2Var(i)]); p->pRefs[Lit2Var(i)]--; }
 void BddPrintRef( BddMan *p ) {
   std::cout << "ref nodes :" << std::endl;
   for(int i = p->nVars + 1; i < p->nObjs; i++) {
@@ -557,7 +562,7 @@ void BddSiftReorder( BddMan * p, double maxinc = 1.1 )
 {
   bool freoverbose = 0;
   // allocation
-  p->pEdges = (int*)calloc( p->nObjsAlloc, sizeof(int) );
+  p->pEdges = (unsigned*)calloc( p->nObjsAlloc, sizeof(int) );
   p->nodelist.resize(p->nVars);
   for(int i = p->nVars + 1; i < p->nObjs; i++)
     if(p->pRefs[i])
@@ -660,7 +665,7 @@ bool BddCheckSymmetric( BddMan * p, int i )
   return 1;
 }
 void BddSymmetricTest( BddMan * p, int x ) {
-  p->pEdges = (int*)calloc( p->nObjsAlloc, sizeof(int) );
+  p->pEdges = (unsigned*)calloc( p->nObjsAlloc, sizeof(int) );
   p->nodelist.resize(p->nVars);
   BddRecursiveRef(p, x);
 
@@ -679,7 +684,7 @@ void BddSymmetricSiftReorder( BddMan * p, double maxinc = 1.1 )
 {
   bool freoverbose = 1;
   // allocation
-  p->pEdges = (int*)calloc( p->nObjsAlloc, sizeof(int) );
+  p->pEdges = (unsigned*)calloc( p->nObjsAlloc, sizeof(int) );
   p->nodelist.resize(p->nVars);
   for(int i = p->nVars + 1; i < p->nObjs; i++)
     if(p->pRefs[i])
