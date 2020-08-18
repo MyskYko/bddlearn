@@ -629,6 +629,191 @@ void BddSiftReorder( BddMan * p, double maxinc = 1.1 )
 }  
 
 /**Function*************************************************************
+   Synopsis    [symmetric.]
+   Description []
+               
+   SideEffects []
+   SeeAlso     []
+***********************************************************************/
+bool BddCheckSymmetric( BddMan * p, int i )
+{
+  assert(!p->nodelist.empty());
+  assert(p->pEdges);
+  int uv = BddLevel2Var(p, i);
+  int lv = BddLevel2Var(p, i + 1);
+  int count = 0;
+  // check function
+  for(int a : p->nodelist[uv]) {
+    int t, e, te, et;
+    t = p->pObjs[a+a], e = p->pObjs[a+a+1];
+    if(BddVar(p, t) == lv) te = BddElse(p, t), count++;
+    else te = t;
+    if(BddVar(p, e) == lv) et = BddThen(p, e), count++;
+    else et = e;
+    if(te != et) return 0;
+  }
+  // check edges
+  for(int a : p->nodelist[lv]) {
+    count -= p->pEdges[a];
+  }
+  if(count != 0) return 0;
+  return 1;
+}
+void BddSymmetricTest( BddMan * p, int x ) {
+  p->pEdges = (int*)calloc( p->nObjsAlloc, sizeof(int) );
+  p->nodelist.resize(p->nVars);
+  BddRecursiveRef(p, x);
+
+  for(int i = 0; i < p->nVars - 1; i++) {
+    std::cout << i << std::endl;
+    if(BddCheckSymmetric(p, i)) {
+      std::cout << "symmetric at level " << i << " var " << BddLevel2Var(p, i) << " and " << BddLevel2Var(p, i+1) << std::endl;
+    }
+  }
+  
+  free(p->pEdges);
+  p->pEdges = NULL;
+  p->nodelist.clear();
+}
+void BddSymmetricSiftReorder( BddMan * p, double maxinc = 1.1 )
+{
+  bool freoverbose = 1;
+  // allocation
+  p->pEdges = (int*)calloc( p->nObjsAlloc, sizeof(int) );
+  p->nodelist.resize(p->nVars);
+  for(int i = p->nVars + 1; i < p->nObjs; i++)
+    if(p->pRefs[i])
+      BddRecursiveRef(p, Var2Lit(i, 0));
+  // get current symmetry
+  std::vector<int> group(p->nVars);
+  for(int i = 0; i < p->nVars; i++)
+    group[i] = i;
+  for(int i = 0; i < p->nVars - 1; i++) {
+    if(BddCheckSymmetric(p, i)) {
+      group[BddLevel2Var(p, i + 1)] = group[BddLevel2Var(p, i)];
+      if(freoverbose) std::cout << "symmetric at level " << i << " var " << BddLevel2Var(p, i) << " and " << BddLevel2Var(p, i + 1) << std::endl;
+    }
+  }
+  std::vector<int> groupheads(p->nVars);
+  std::vector<int> groupsizes(p->nVars);
+  for(int i = 0; i < p->nVars; i++)
+    groupheads[i] = -1;
+  for(int i = 0; i < p->nVars; i++) {
+    int j = BddLevel2Var(p, i);
+    groupsizes[group[j]]++;
+    if(groupheads[group[j]] == -1)
+      groupheads[group[j]] = j;
+  }
+  if(freoverbose) {
+    for(int i = 0; i < p->nVars; i++) {
+      if(groupheads[i] == -1) continue;
+      std::cout << "group " << i << " head " << groupheads[i] << " size " << groupsizes[i] << std::endl;
+    }
+  }
+  // count nodes and decide order to sift
+  int basecount = 0;
+  std::vector<int> dorder;
+  {
+    // count nodes
+    for(int i = 0; i < p->nVars; i++)
+      basecount += p->nodelist[i].size();
+    // decide order
+    std::vector<bool> done(p->nVars);
+    while(1) {
+      int maxnodes = 0;
+      int v = -1;
+      for(int i = 0; i < p->nVars; i++) {
+	if(done[i]) continue;
+	if(maxnodes < p->nodelist[i].size())
+	  maxnodes = p->nodelist[i].size(), v = i;
+      }
+      if(v == -1) break;
+      dorder.push_back(v);
+      for(int i = 0; i < p->nVars; i++)
+ 	if(group[i] == group[v])
+ 	  done[i] = 1;
+    }
+  }
+  // sift
+  int ndiff = 0;
+  std::vector<bool> done(p->nVars);
+  for(int v : dorder) {
+    v = groupheads[group[v]];
+    if(done[v]) continue;
+    if(freoverbose) std::cout << "sift " << v << " groupsize " << groupsizes[group[v]] << std::endl;
+    int mindiff = ndiff;
+    int minlevel = BddVar2Level(p, v);
+    if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + ndiff << std::endl;
+    bool godown = BddVar2Level(p, v) >= (p->nVars >> 1);
+    int nite = 0;
+    while(1) {
+      while((godown && BddVar2Level(p, v) + groupsizes[group[v]] < p->nVars) ||
+	    (!godown && BddVar2Level(p, v) > 0)) {
+	if(godown) {
+	  int nlev = BddVar2Level(p, v) + groupsizes[group[v]];
+	  int nsize = groupsizes[group[BddLevel2Var(p, nlev)]];
+	  for(int k = 0; k < nsize; k++)
+	    for(int i = groupsizes[group[v]] - 1; i >= 0; i--)
+	      ndiff += BddSwap(p, BddVar2Level(p, v) + i);
+	}
+	else {
+	  int nlev = BddVar2Level(p, v) - 1;
+	  int nsize = groupsizes[group[BddLevel2Var(p, nlev)]];
+	  for(int k = 0; k < nsize; k++) {
+	    int j = BddVar2Level(p, v);
+	    for(int i = 0; i < groupsizes[group[v]]; i++)
+	      ndiff += BddSwap(p, j + i - 1);
+	  }
+	}
+	if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + ndiff << std::endl;
+	// check symmetric
+	int nlev = BddVar2Level(p, v) + groupsizes[group[v]];
+ 	if(nlev != p->nVars && BddCheckSymmetric(p, nlev - 1)) {
+ 	  if(freoverbose) std::cout << "found symmetric with var ";
+ 	  int j = group[BddLevel2Var(p, nlev)];
+ 	  for(int i = 0; i < p->nVars; i++)
+ 	    if(group[i] == j) {
+ 	      if(freoverbose) std::cout << i << ", ";
+ 	      group[i] = group[v];
+ 	      groupsizes[group[v]]++;
+ 	    }
+ 	  if(freoverbose) std::cout << std::endl;
+ 	  // reset min
+ 	  mindiff = ndiff;
+ 	  minlevel = BddVar2Level(p, v);
+	  nite = 0;
+ 	}
+	if(nite == 2) {
+	  if(BddVar2Level(p, v) == minlevel) break;
+	  continue;
+	}
+	if(basecount * (maxinc - 1) < ndiff) break;
+	if(mindiff >= ndiff) {
+	  mindiff = ndiff;
+	  minlevel = BddVar2Level(p, v);
+	}
+      }
+      godown ^= 1;
+      if(nite == 2) break;
+      nite++;
+      if(nite == 2 && BddVar2Level(p, v) == minlevel) break;
+    }
+    done[v] = 1;
+  }
+  // verify
+  for(int i = p->nVars + 1; i < p->nObjs; i++)
+    if(p->pRefs[i])
+      BddRecursiveDeref(p, Var2Lit(i, 0));
+  for(int i = p->nVars + 1; i < p->nObjs; i++)
+    assert(p->pEdges[i] == 0);
+  // finalize
+  free(p->pEdges);
+  p->pEdges = NULL;
+  p->nodelist.clear();
+  BddCacheClear(p);
+}
+
+/**Function*************************************************************
   Synopsis    [Printing BDD.]
   Description []
                
