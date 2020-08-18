@@ -604,7 +604,7 @@ void BddSiftReorder( BddMan * p, double maxinc = 1.1 )
 	  continue;
 	}
 	if(basecount * (maxinc - 1) < ndiff) break;
-	if(mindiff > ndiff) {
+	if(mindiff >= ndiff) {
 	  mindiff = ndiff;
 	  minlevel = BddVar2Level(p, v);
 	}
@@ -612,6 +612,7 @@ void BddSiftReorder( BddMan * p, double maxinc = 1.1 )
       godown ^= 1;
       if(nite == 2) break;
       nite++;
+      if(nite == 2 && BddVar2Level(p, v) == minlevel) break;
     }
   }
   // verify
