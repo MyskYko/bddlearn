@@ -43,7 +43,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  bddlearn(traininputs, trainoutputs[0], outname);
+  bddlearn(traininputs, trainoutputs[0], outname, 0);
+  bddlearn(traininputs, trainoutputs[0], outname, 1);
   
   return 0;
 }

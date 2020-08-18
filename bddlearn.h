@@ -553,7 +553,7 @@ int BddSwap( BddMan * p, int i )
   }
   return p->nodelist[uv].size() + p->nodelist[lv].size() - count;
 }
-void BddSiftReorder( BddMan * p, int x = 0, double maxinc = 1.1 )
+void BddSiftReorder( BddMan * p, double maxinc = 1.1 )
 {
   bool freoverbose = 0;
   // allocation
@@ -567,13 +567,8 @@ void BddSiftReorder( BddMan * p, int x = 0, double maxinc = 1.1 )
   std::vector<int> dorder;
   {
     // count nodes
-    std::vector<int> nnodes(p->nVars);
-    if(x) BddCountNodes(p, x, nnodes);
-    else
-      for(int i = 0; i < p->nVars; i++)
-	nnodes[i] = p->nodelist[i].size();
     for(int i = 0; i < p->nVars; i++)
-      basecount += nnodes[i];
+      basecount += p->nodelist[i].size();
     // decide order
     std::vector<bool> done(p->nVars);
     while(1) {
@@ -581,8 +576,8 @@ void BddSiftReorder( BddMan * p, int x = 0, double maxinc = 1.1 )
       int v = -1;
       for(int i = 0; i < p->nVars; i++) {
 	if(done[i]) continue;
-	if(maxnodes < nnodes[i])
-	  maxnodes = nnodes[i], v = i;
+	if(maxnodes < p->nodelist[i].size())
+	  maxnodes = p->nodelist[i].size(), v = i;
       }
       if(v == -1) break;
       dorder.push_back(v);
@@ -601,7 +596,6 @@ void BddSiftReorder( BddMan * p, int x = 0, double maxinc = 1.1 )
     if(godown) {
       while(BddVar2Level(p, v) < p->nVars - 1) {
 	ndiff += BddSwap(p, BddVar2Level(p, v));
-	if(x) ndiff = BddCountNodes(p, x) - basecount;
 	if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + ndiff << std::endl;
 	if(basecount * (maxinc - 1) < ndiff) break;
 	if(mindiff > ndiff) {
@@ -613,7 +607,6 @@ void BddSiftReorder( BddMan * p, int x = 0, double maxinc = 1.1 )
     // go up
     while(BddVar2Level(p, v) > 0) {
       ndiff += BddSwap(p, BddVar2Level(p, v) - 1);
-      if(x) ndiff = BddCountNodes(p, x) - basecount;
       if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + ndiff << std::endl;
       if(basecount * (maxinc - 1) < ndiff) break;
       if(mindiff > ndiff) {
@@ -625,7 +618,6 @@ void BddSiftReorder( BddMan * p, int x = 0, double maxinc = 1.1 )
     if(!godown) {
       while(BddVar2Level(p, v) < p->nVars - 1) {
 	ndiff += BddSwap(p, BddVar2Level(p, v));
-	if(x) ndiff = BddCountNodes(p, x) - basecount;
 	if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + ndiff << std::endl;
 	if(basecount * (maxinc - 1) < ndiff) break;
 	if(mindiff > ndiff) {
@@ -639,7 +631,6 @@ void BddSiftReorder( BddMan * p, int x = 0, double maxinc = 1.1 )
       // go down
       while(BddVar2Level(p, v) < minlevel) {
 	ndiff += BddSwap(p, BddVar2Level(p, v));
-	if(x) ndiff = BddCountNodes(p, x) - basecount;
 	if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + ndiff << std::endl;
       }
     }
@@ -647,7 +638,6 @@ void BddSiftReorder( BddMan * p, int x = 0, double maxinc = 1.1 )
       // go up
       while(BddVar2Level(p, v) > minlevel) {
 	ndiff += BddSwap(p, BddVar2Level(p, v) - 1);
-	if(x) ndiff = BddCountNodes(p, x) - basecount;
 	if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + ndiff << std::endl;
       }
     }
@@ -1227,10 +1217,74 @@ int BddMinimizeLevelTD( BddMan * p, int f, int g ) {
   SideEffects []
   SeeAlso     []
 ***********************************************************************/
-void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynamic_bitset<> const & output, std::string aigname) {
+void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynamic_bitset<> const & output, std::string aigname, bool reo) {
   int ninputs = inputs.size();
   BddMan * p = BddManAlloc(ninputs + 1, 25);
 
+  // reorder for some set
+  if(reo) {
+    // read patterns
+    int onset = 0;
+    BddIncRef(p, onset);
+    int offset = 0;
+    BddIncRef(p, offset);
+    int tmp;
+    for(int i = 0; i < inputs[0].size(); i++) {
+      int minterm = 1;
+      BddIncRef(p, minterm);
+      for(int j = 0; j < inputs.size(); j++) {
+	if(inputs[j][i])
+	  tmp = BddAnd(p, minterm, BddIthVar(j));
+	else
+	  tmp = BddAnd(p, minterm, LitNot(BddIthVar(j)));
+	BddIncRef(p, tmp);
+	BddDecRef(p, minterm);
+	minterm = tmp;
+      }
+      if(output[i]) {
+	tmp = BddOr(p, onset, minterm);
+	BddIncRef(p, tmp);
+	BddDecRef(p, onset), BddDecRef(p, minterm);
+	onset = tmp;
+      }
+      else {
+	tmp = BddOr(p, offset, minterm);
+	BddIncRef(p, tmp);
+	BddDecRef(p, offset), BddDecRef(p, minterm);
+	offset = tmp;
+      }
+    }
+
+    int x;
+    //x = BddOr(p, BddAnd(p, onset, BddIthVar(ninputs)), BddAnd(p, offset, LitNot(BddIthVar(ninputs))));
+    x = onset;
+    //x = offset;
+    
+    BddIncRef(p, x);
+    BddDecRef(p, onset);
+    BddDecRef(p, offset);
+    
+    std::cout << "before reo : " << BddCountNodes(p, x) << std::endl;
+    BddSiftReorder(p);
+    std::cout << "after reo : " << BddCountNodes(p, x) << std::endl;
+    std::cout << "ordering : " << std::endl;
+    for(int i = 0; i < p->nVars; i++)
+      std::cout << "pi" << BddLevel2Var(p, i) << ", ";
+    std::cout << std::endl;
+    BddDecRef(p, x);
+  }
+
+  // transfer ordering
+  BddMan * p2 = BddManAlloc(ninputs + 1, 25);
+  for(int i = 0; i < ninputs; i++) {
+    p2->pLevels[i] = p->pLevels[i];
+  }
+  BddPrintRef(p);
+  assert(p->pRefs[0] == 0);
+  BddManFree(p);
+  p = p2;
+
+  // read patterns
   int onset = 0;
   BddIncRef(p, onset);
   int offset = 0;
@@ -1240,12 +1294,10 @@ void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynam
     int minterm = 1;
     BddIncRef(p, minterm);
     for(int j = 0; j < inputs.size(); j++) {
-      if(inputs[j][i]) {
+      if(inputs[j][i])
 	tmp = BddAnd(p, minterm, BddIthVar(j));
-      }
-      else {
+      else
 	tmp = BddAnd(p, minterm, LitNot(BddIthVar(j)));
-      }
       BddIncRef(p, tmp);
       BddDecRef(p, minterm);
       minterm = tmp;
@@ -1301,30 +1353,6 @@ void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynam
   x = BddMinimizeLevelTD(p, x, LitNot(careset));
   std::cout << "bmin with pre : " << BddCountNodes(p, x) << std::endl;
   BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
-
-  BddDecRef(p, careset);
-  
-  // reorder
-  //x = BddOr(p, BddAnd(p, onset, BddIthVar(ninputs)), BddAnd(p, offset, LitNot(BddIthVar(ninputs))));
-  x = onset;
-  //x = offset;
-
-  BddIncRef(p, x);
-  std::cout << "before reo : " << BddCountNodes(p, x) << std::endl;
-  BddSiftReorder(p, x);
-  std::cout << "after reo : " << BddCountNodes(p, x) << std::endl;
-  std::cout << "ordering : " << std::endl;
-  for(int i = 0; i < p->nVars; i++)
-    std::cout << "pi" << BddLevel2Var(p, i) << ", ";
-  std::cout << std::endl;
-  BddDecRef(p, x);
-  
-  // minimize
-  careset = BddOr(p, onset, offset);
-  BddIncRef(p, careset);
-  x = BddMinimize3(p, onset, LitNot(careset), 0);
-  x = BddMinimizeLevelTD(p, x, LitNot(careset));
-  std::cout << "minimize : " << BddCountNodes(p, x) << std::endl;
 
   // write output;
   aigman * aig = GenAig( p, x, ninputs );
