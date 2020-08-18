@@ -64,13 +64,15 @@ int BddMark( BddMan * p, int i ) { return p->pMark[Lit2Var(i)]; }
 void BddSetMark( BddMan * p, int i, int m ){ p->pMark[Lit2Var(i)] = m; }
 
 unsigned BddEdge( BddMan * p, int i ) { return p->pEdges[Lit2Var(i)]; }
-void BddIncEdge( BddMan *p, int i ) { if(i == 0 || i == 1 || p->pEdges[Lit2Var(i)] == 0xffffffff) return; p->pEdges[Lit2Var(i)]++; }
-void BddDecEdge( BddMan *p, int i ) { if(i == 0 || i == 1 || p->pEdges[Lit2Var(i)] == 0xffffffff) return; assert(p->pEdges[Lit2Var(i)]); p->pEdges[Lit2Var(i)]--; }
+void BddIncEdge( BddMan *p, int i ) { if(i == 0 || i == 1) return; assert(p->pEdges[Lit2Var(i)] != 0xffffffff); p->pEdges[Lit2Var(i)]++; }
+void BddDecEdge( BddMan *p, int i ) { if(i == 0 || i == 1) return; assert(p->pEdges[Lit2Var(i)]); p->pEdges[Lit2Var(i)]--; }
 
-void BddIncPEdge( BddMan *p, int i ) { if(i == 0 || i == 1 || (p->pEdges[Lit2Var(i)] & 0xffff) == 0xffff) return; p->pEdges[Lit2Var(i)]++; }
-void BddDecPEdge( BddMan *p, int i ) { if(i == 0 || i == 1 || (p->pEdges[Lit2Var(i)] & 0xffff) == 0xffff) return; assert(p->pEdges[Lit2Var(i)] & 0xffff); p->pEdges[Lit2Var(i)]--; }
-void BddIncNEdge( BddMan *p, int i ) { if(i == 0 || i == 1 || (p->pEdges[Lit2Var(i)] >> 16) == 0xffff) return; p->pEdges[Lit2Var(i)] += 0x10000; }
-void BddDecNEdge( BddMan *p, int i ) { if(i == 0 || i == 1 || (p->pEdges[Lit2Var(i)] >> 16) == 0xffff) return; assert(p->pEdges[Lit2Var(i)] >> 16); p->pEdges[Lit2Var(i)] -= 0x10000; }
+unsigned BddPEdge( BddMan * p, int i ) { return p->pEdges[Lit2Var(i)] & 0xffff; }
+void BddIncPEdge( BddMan *p, int i ) { if(i == 0 || i == 1) return; assert((p->pEdges[Lit2Var(i)] & 0xffff) != 0xffff); p->pEdges[Lit2Var(i)]++; }
+void BddDecPEdge( BddMan *p, int i ) { if(i == 0 || i == 1) return; assert(p->pEdges[Lit2Var(i)] & 0xffff); p->pEdges[Lit2Var(i)]--; }
+unsigned BddNEdge( BddMan * p, int i ) { return p->pEdges[Lit2Var(i)] >> 16; }
+void BddIncNEdge( BddMan *p, int i ) { if(i == 0 || i == 1) return; assert((p->pEdges[Lit2Var(i)] >> 16) != 0xffff); p->pEdges[Lit2Var(i)] += 0x10000; }
+void BddDecNEdge( BddMan *p, int i ) { if(i == 0 || i == 1) return; assert(p->pEdges[Lit2Var(i)] >> 16); p->pEdges[Lit2Var(i)] -= 0x10000; }
 
 int BddRef( BddMan * p, int i ) { return p->pRefs[Lit2Var(i)]; }
 void BddIncRef( BddMan *p, int i ) { if(p->pRefs[Lit2Var(i)] == 0xffff) return; p->pRefs[Lit2Var(i)]++; }
