@@ -591,55 +591,27 @@ void BddSiftReorder( BddMan * p, double maxinc = 1.1 )
     int mindiff = ndiff;
     int minlevel = BddVar2Level(p, v);
     if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + ndiff << std::endl;
-    // go down
-    bool godown = BddVar2Level(p, v) > (p->nVars >> 1);
-    if(godown) {
-      while(BddVar2Level(p, v) < p->nVars - 1) {
-	ndiff += BddSwap(p, BddVar2Level(p, v));
+    bool godown = BddVar2Level(p, v) >= (p->nVars >> 1);
+    int nite = 0;
+    while(1) {
+      while((godown && BddVar2Level(p, v) < p->nVars - 1) ||
+	    (!godown && BddVar2Level(p, v) > 0)) {
+	if(godown) ndiff += BddSwap(p, BddVar2Level(p, v));
+	else ndiff += BddSwap(p, BddVar2Level(p, v) - 1);
 	if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + ndiff << std::endl;
+	if(nite == 2) {
+	  if(BddVar2Level(p, v) == minlevel) break;
+	  continue;
+	}
 	if(basecount * (maxinc - 1) < ndiff) break;
 	if(mindiff > ndiff) {
 	  mindiff = ndiff;
 	  minlevel = BddVar2Level(p, v);
 	}
       }
-    }
-    // go up
-    while(BddVar2Level(p, v) > 0) {
-      ndiff += BddSwap(p, BddVar2Level(p, v) - 1);
-      if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + ndiff << std::endl;
-      if(basecount * (maxinc - 1) < ndiff) break;
-      if(mindiff > ndiff) {
-	mindiff = ndiff;
-	minlevel = BddVar2Level(p, v);
-      }
-    }      
-    // go down unless already tried
-    if(!godown) {
-      while(BddVar2Level(p, v) < p->nVars - 1) {
-	ndiff += BddSwap(p, BddVar2Level(p, v));
-	if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + ndiff << std::endl;
-	if(basecount * (maxinc - 1) < ndiff) break;
-	if(mindiff > ndiff) {
-	  mindiff = ndiff;
-	  minlevel = BddVar2Level(p, v);
-	}
-      }
-    }
-    // go min
-    if(godown) {
-      // go down
-      while(BddVar2Level(p, v) < minlevel) {
-	ndiff += BddSwap(p, BddVar2Level(p, v));
-	if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + ndiff << std::endl;
-      }
-    }
-    else {
-      // go up
-      while(BddVar2Level(p, v) > minlevel) {
-	ndiff += BddSwap(p, BddVar2Level(p, v) - 1);
-	if(freoverbose) std::cout << "\tlevel " << BddVar2Level(p, v) << " nodes " << basecount + ndiff << std::endl;
-      }
+      godown ^= 1;
+      if(nite == 2) break;
+      nite++;
     }
   }
   // verify
