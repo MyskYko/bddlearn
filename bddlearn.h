@@ -428,7 +428,13 @@ void BddGarbageCollect( BddMan * p )
       else it++;
     }
     // from table
+    /* required for DC-symmetric
+    for(int i = p->nVars + 1; i < p->nObjs; i++)
+      if(p->pRefs[i] && !p->pEdges[i])
+	BddMark_rec(p, Var2Lit(i, 0));
+    */
     for(int i = p->nVars + 1; i < p->nObjs; i++) {
+      //if(!p->pEdges[i] && !p->pMark[i]) {
       if(!p->pEdges[i]) {
 	BddDeregister(p, i);
 	p->pVars[i] = 0xffff;
@@ -436,6 +442,11 @@ void BddGarbageCollect( BddMan * p )
 	count++;
 	if(p->nMinRemoved > i) p->nMinRemoved = i;
       }
+      /* required for DC-symmetric
+      for(int i = p->nVars + 1; i < p->nObjs; i++)
+	if(p->pRefs[i] && !p->pEdges[i])
+	  BddUnmark_rec(p, Var2Lit(i, 0));
+      */
     }
     std::cout << "delete " << count << std::endl;
     return;
@@ -672,10 +683,11 @@ void BddSymmetricTest( BddMan * p, int x ) {
   BddRecursiveRef(p, x);
 
   for(int i = 0; i < p->nVars - 1; i++) {
-    std::cout << i << std::endl;
+    std::cout << "level " << i << std::endl;
     if(BddCheckSymmetric(p, i)) {
       std::cout << "symmetric at level " << i << " var " << BddLevel2Var(p, i) << " and " << BddLevel2Var(p, i+1) << std::endl;
     }
+    std::cout << std::endl;
   }
   
   free(p->pEdges);
@@ -819,6 +831,139 @@ void BddSymmetricSiftReorder( BddMan * p, double maxinc = 1.1 )
   p->nodelist.clear();
   BddCacheClear(p);
 }
+
+/**Function*************************************************************
+  Synopsis    [DC-symmetric.]
+  Description []
+               
+  SideEffects []
+  SeeAlso     []
+***********************************************************************/
+int BddUniv( BddMan * p, int f, int v )
+{
+    if ( f == 0 || f == 1 ) return f;
+    if ( BddVar(p, f) == v )
+      return BddAnd( p, BddElse(p, f), BddThen(p, f) );
+    int r0, r1, r;
+    r0 = BddUniv( p, BddElse(p, f), v ), BddIncRef(p, r0);
+    r1 = BddUniv( p, BddThen(p, f), v ), BddIncRef(p, r1);
+    r = BddUniqueCreate( p, BddVar(p, f), r1, r0 );
+    BddDecRef(p, r0), BddDecRef(p, r1);
+    return r;
+}
+void BddRecursivePNRef( BddMan * p, int x )
+{
+  if(x == 0 || x == 1) return;
+  assert(!p->nodelist.empty());
+  assert(p->pEdges);
+  if(BddEdge(p, x) == 0)
+    p->nodelist[BddVar(p, x)].push_back(Lit2Var(x));
+  if(LitIsCompl(x)) {
+    if(BddNEdge(p, x) == 0) {
+      BddRecursivePNRef(p, BddThen(p, x));
+      BddRecursivePNRef(p, BddElse(p, x));
+    }
+    BddIncNEdge(p, x);
+  }
+  else {
+    if(BddPEdge(p, x) == 0) {
+      BddRecursivePNRef(p, BddThen(p, x));
+      BddRecursivePNRef(p, BddElse(p, x));
+    }
+    BddIncPEdge(p, x);
+  }
+}
+bool BddCheckDCSymmetric( BddMan * p, int i )
+{
+  // assume 0 is DC
+  assert(!p->nodelist.empty());
+  assert(p->pEdges);
+  int uv = BddLevel2Var(p, i);
+  int lv = BddLevel2Var(p, i + 1);
+  std::map<int, unsigned> count;
+  // check function
+  for(int a : p->nodelist[uv]) {
+    int t, e, te, et;
+    t = p->pObjs[a+a], e = p->pObjs[a+a+1];
+    //std::cout << "\t" << a << " edge " << (p->pEdges[a] & 0xffff) << " " << (p->pEdges[a] >> 16) << " then " << t << "(" << BddVar(p, t) << ") else " << e << "(" << BddVar(p, e) << ")" << std::endl;
+    for(int m = 0; m <= 1; m++) {
+      if(!m && !(p->pEdges[a] & 0xffff)) continue;
+      if(m && !(p->pEdges[a] >> 16)) continue;
+      if(BddVar(p, t) == lv) count[Lit2Var(t)] += (m ^ LitIsCompl(t))? 0x10000: 1;
+      if(BddVar(p, e) == lv) count[Lit2Var(e)] += (m ^ LitIsCompl(e))? 0x10000: 1;
+      if(m) // negated case
+	t = LitNot(t), e = LitNot(e);
+      if(t == 0 || e == 0) continue;
+      if(BddVar(p, t) == lv) te = BddElse(p, t);
+      else te = t;
+      if(BddVar(p, e) == lv) et = BddThen(p, e);
+      else et = e;
+      if(te == 0 || et == 0) continue;
+      int r, c;
+      r = BddOr(p, te, et);
+      BddIncRef(p, r);
+      c = BddUniv(p, r, p->nVars - 1);
+      BddDecRef(p, r);
+      if(c != 0) {
+	std::cout << "inconsistent when " << c << std::endl;
+	return 0;
+      }
+      //std::cout << "\t\torg " << BddCountNodes(p, te, et) << " new " << BddCountNodes(p, r) << std::endl;
+    }
+  }
+  // check edges
+  for(int a : p->nodelist[lv]) {
+    unsigned d = p->pEdges[a] - count[a];
+    if(d == 0) continue;
+    std::cout << "\t\textra check" << std::endl;
+    int t, e;
+    t = p->pObjs[a+a], e = p->pObjs[a+a+1];
+    for(int m = 0; m <= 1; m++) {
+      if(!m && !(d & 0xffff)) continue;
+      if(m && !(d >> 16)) continue;
+      if(m) // negated case
+	t = LitNot(t), e = LitNot(e);
+      int r, c;
+      r = BddOr(p, t, e);
+      BddIncRef(p, r);
+      c = BddUniv(p, r, p->nVars - 1);
+      BddDecRef(p, r);
+      if(c != 0) {
+	std::cout << "inconsistent when " << c << std::endl;
+	return 0;
+      }
+    }
+  }
+  return 1;
+}
+void BddPrint( BddMan * p, int a );
+void BddDCSymmetricTest( BddMan * p, int x ) {
+  p->pEdges = (unsigned*)calloc( p->nObjsAlloc, sizeof(int) );
+  p->nodelist.resize(p->nVars);
+  BddRecursivePNRef(p, x);
+  /*
+  for(int i = 0; i < p->nVars - 2; i++) { // assume the last variable is the output value
+    std::cout << "level" << i << std::endl;
+    for(int a : p->nodelist[i]) {
+      int t, e;
+      t = p->pObjs[a+a], e = p->pObjs[a+a+1];
+      std::cout << "\t" << a << " edge " << (p->pEdges[a] & 0xffff) << " " << (p->pEdges[a] >> 16) << " then " << t << "(" << BddVar(p, t) << ") else " << e << "(" << BddVar(p, e) << ")" << std::endl;
+    }
+  }
+  */
+  for(int i = 0; i < p->nVars - 2; i++) { // assume the last variable is the output value
+    std::cout << "level" << i << std::endl;
+    if(BddCheckDCSymmetric(p, i)) {
+      std::cout << "DC-symmetric at level " << i << " var " << BddLevel2Var(p, i) << " and " << BddLevel2Var(p, i+1) << std::endl;
+    }
+    std::cout << std::endl;
+  }
+  
+  free(p->pEdges);
+  p->pEdges = NULL;
+  p->nodelist.clear();
+}
+
 
 /**Function*************************************************************
   Synopsis    [Printing BDD.]
