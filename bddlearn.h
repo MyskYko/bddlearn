@@ -1200,6 +1200,68 @@ int BddMinimize3(BddMan * p, int f, int g, bool finter = 1) {
   BddDecRef(p, r0), BddDecRef(p, r1);
   return r;
 }
+int BddMinimize4(BddMan * p, int f, int g, double maxinc = 1.1) {
+  // terminal (care set)
+  if(g == 0) return f;
+  assert(g != 1);
+  // top var
+  if(BddLevel(p, f) > BddLevel(p, g)) {
+    int t, r;
+    t = BddAnd(p, BddElse(p, g), BddThen(p, g));
+    BddIncRef(p, t);
+    r = BddMinimize4(p, f, t, maxinc);
+    BddDecRef(p, t);
+    return r;
+  }
+  int var = BddVar(p, f);
+  int f0, f1, g0, g1;
+  f0 = BddElse(p, f), f1 = BddThen(p, f);
+  if(var == BddVar(p, g)) g0 = BddElse(p, g), g1 = BddThen(p, g);
+  else g0 = g1 = g;
+  assert(f0 != f1);
+  // only one case is cared
+  if(g0 == 1) return BddMinimize4(p, f1, g1, maxinc);
+  if(g1 == 1) return BddMinimize4(p, f0, g0, maxinc);
+  int count = BddCountNodes(p, f0, f1) * maxinc;
+  //check if intersection exists
+  if(BddCheckIntersect(p, f0, g0, f1, g1)) {
+    int f2, g2, r;
+    f2 = BddDCIntersect2(p, f0, g0, f1, g1);
+    if(BddCountNodes(p, f2) < count) {
+      BddIncRef(p, f2);
+      g2 = BddAnd(p, g0, g1);
+      BddIncRef(p, g2);
+      r = BddMinimize4(p, f2, g2, maxinc);
+      BddDecRef(p, f2), BddDecRef(p, g2);
+      return r;
+    }
+  }
+  if(BddCheckIntersect(p, LitNot(f0), g0, f1, g1)) {
+    int f2, g2, t, r;
+    f2 = BddDCIntersect2(p, LitNot(f0), g0, f1, g1);
+    if(BddCountNodes(p, f2) < count) {
+      BddIncRef(p, f2);
+      g2 = BddAnd(p, g0, g1);
+      BddIncRef(p, g2);
+      t = BddMinimize4(p, f2, g2, maxinc);
+      BddIncRef(p, t);
+      BddDecRef(p, f2), BddDecRef(p, g2);
+      r = BddUniqueCreate(p, var, t, LitNot(t));
+      BddDecRef(p, t);
+      return r;
+    }
+  }
+  // without intersection
+  int r0, r1, r;
+  r0 = BddMinimize4(p, f0, g0, maxinc);
+  BddIncRef(p, r0);
+  r1 = BddMinimize4(p, f1, g1, maxinc);
+  BddIncRef(p, r1);
+  r = BddUniqueCreate(p, var, r1, r0);
+  BddDecRef(p, r0), BddDecRef(p, r1);
+  return r;
+}
+
 /**Function*************************************************************
    Synopsis    [minimize with DC]
    Description []
