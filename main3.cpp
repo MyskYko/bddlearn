@@ -22,17 +22,20 @@ int main(int argc, char** argv) {
   for(int i = 0; i < aig.nPis / 2; i++) {
     {
       int pos = std::distance(order.begin(), std::find(order.begin(), order.end(), aig.nPis / 2 - i - 1));
-      if(i + i == pos) continue;
-      aig.swappis(i + i, pos);
-      std::swap(order[i + i], order[pos]);
+      if(i + i != pos) {
+	aig.swappis(i + i, pos);
+	std::swap(order[i + i], order[pos]);
+      }
     }
     {
       int pos = std::distance(order.begin(), std::find(order.begin(), order.end(), aig.nPis - i - 1));
-      if(i + i + 1 == pos) continue;
-      aig.swappis(i + i + 1, pos);
-      std::swap(order[i + i + 1], order[pos]);
+      if(i + i + 1 != pos) {
+	aig.swappis(i + i + 1, pos);
+	std::swap(order[i + i + 1], order[pos]);
+      }
     }
   }
+
 
   aig.write(aigname2);
   
