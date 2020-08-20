@@ -1623,6 +1623,18 @@ void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynam
   std::cout << "minimize inter : " << BddCountNodes(p, x) << std::endl;
   BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
   
+  x = BddMinimize3(p, onset, LitNot(careset), 0);
+  std::cout << "minimize : " << BddCountNodes(p, x) << std::endl;
+  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
+  BddIncRef(p, x);
+  {
+    int t = BddMinimize4(p, x, LitNot(careset));
+    BddDecRef(p, x);
+    x = t;
+  }
+  std::cout << "minimize comp: " << BddCountNodes(p, x) << std::endl;
+  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
+  
   x = BddMinimizeLevelTD(p, onset, LitNot(careset));
   std::cout << "bminimize : " << BddCountNodes(p, x) << std::endl;
   BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
