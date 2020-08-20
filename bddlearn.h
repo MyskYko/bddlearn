@@ -1301,11 +1301,41 @@ void BddMinimizeLevel(BddMan * p, std::vector<std::pair<int, int> > & ts, std::m
     if(abs(c[i]) <= i) continue;
     for(int j = i + 1; j < ts.size(); j++) {
       if(abs(c[j]) <= j) continue;
-      int prev = BddCountNodes(p, ts[i].first, ts[j].first);
-      if(BddCheckIntersect(p, ts[i].first, ts[i].second, ts[j].first, ts[j].second)) {
+      int prev = BddCountNodes(p, ts[i].first, ts[j].first) * maxinc;
+      bool bufmerge = BddCheckIntersect(p, ts[i].first, ts[i].second, ts[j].first, ts[j].second);
+      bool xormerge = BddCheckIntersect(p, ts[i].first, ts[i].second, LitNot(ts[j].first), ts[j].second);
+      if(bufmerge && xormerge) {
+	int fb = BddDCIntersect2(p, ts[i].first, ts[i].second, ts[j].first, ts[j].second);
+	BddIncRef(p, fb);
+	int fx = BddDCIntersect2(p, ts[i].first, ts[i].second, LitNot(ts[j].first), ts[j].second);
+	BddDecRef(p, fb);
+	int nb = BddCountNodes(p, fb);
+	int nx = BddCountNodes(p, fx);
+	if(fverbose)
+	  std::cout << "\t\tbuf " << nb << " xor " << nx << " diff " << nx - nb << std::endl;
+	int f2, next;
+	if(nx + 100 < nb) f2 = fx, next = nx, bufmerge = 0;
+	else f2 = fb, next = nb, xormerge = 0;
+	if(next < prev) {
+	  if(fverbose) {
+	    if(bufmerge) std::cout << "\t\tbuf merge " << i << " " << j << "(" << prev << "->" << next << ")" << std::endl;
+	    else std::cout << "\t\txor merge " << i << " " << j << "(" << prev << "->" << next << ")" << std::endl;
+	  }
+	  BddIncRef(p, f2);
+	  int g2 = BddAnd(p, ts[i].second, ts[j].second);
+	  BddIncRef(p, g2);
+	  BddDecRef(p, ts[i].first), BddDecRef(p, ts[i].second);
+	  ts[i].first = f2;
+	  ts[i].second = g2;
+	  m[tsold[i]] = std::make_pair(ts[i], 0);
+	  c[j] = bufmerge? i + 1: -(i + 1);
+	  continue;
+	}
+      }
+      if(bufmerge) {
 	int f2 = BddDCIntersect2(p, ts[i].first, ts[i].second, ts[j].first, ts[j].second);
 	int next = BddCountNodes(p, f2);
-	if(next < prev * maxinc) {
+	if(next < prev) {
 	  if(fverbose) std::cout << "\t\tbuf merge " << i << " " << j << "(" << prev << "->" << next << ")" << std::endl;
 	  BddIncRef(p, f2);
 	  int g2 = BddAnd(p, ts[i].second, ts[j].second);
@@ -1318,10 +1348,10 @@ void BddMinimizeLevel(BddMan * p, std::vector<std::pair<int, int> > & ts, std::m
 	  continue;
 	}
       }
-      if(BddCheckIntersect(p, ts[i].first, ts[i].second, LitNot(ts[j].first), ts[j].second)) {
+      if(xormerge) {
 	int f2 = BddDCIntersect2(p, ts[i].first, ts[i].second, LitNot(ts[j].first), ts[j].second);
 	int next = BddCountNodes(p, f2);
-	if(next < prev * maxinc) {
+	if(next < prev) {
 	  if(fverbose) std::cout << "\t\txor merge " << i << " " << j << "(" << prev << "->" << next << ")" << std::endl;
 	  BddIncRef(p, f2);
 	  int g2 = BddAnd(p, ts[i].second, ts[j].second);
