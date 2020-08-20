@@ -1473,16 +1473,15 @@ void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynam
 	offset = tmp;
       }
     }
-
+    // select set
     int x;
     //x = BddOr(p, BddAnd(p, onset, BddIthVar(ninputs)), BddAnd(p, offset, LitNot(BddIthVar(ninputs))));
     x = onset;
     //x = offset;
-    
     BddIncRef(p, x);
     BddDecRef(p, onset);
     BddDecRef(p, offset);
-    
+    // reorder
     std::cout << "before reo : " << BddCountNodes(p, x) << std::endl;
     BddSiftReorder(p);
     std::cout << "after reo : " << BddCountNodes(p, x) << std::endl;
@@ -1491,16 +1490,15 @@ void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynam
       std::cout << "pi" << BddLevel2Var(p, i) << ", ";
     std::cout << std::endl;
     BddDecRef(p, x);
+    // transfer ordering
+    BddMan * p2 = BddManAlloc(ninputs + 1, 25);
+    for(int i = 0; i < ninputs; i++)
+      p2->pLevels[i] = p->pLevels[i];
+    BddPrintRef(p);
+    assert(p->pRefs[0] == 0);
+    BddManFree(p);
+    p = p2;
   }
-
-  // transfer ordering
-  BddMan * p2 = BddManAlloc(ninputs + 1, 25);
-  for(int i = 0; i < ninputs; i++)
-    p2->pLevels[i] = p->pLevels[i];
-  BddPrintRef(p);
-  assert(p->pRefs[0] == 0);
-  BddManFree(p);
-  p = p2;
 
   // read patterns
   int onset = 0;
