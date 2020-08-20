@@ -1288,13 +1288,13 @@ void BddMinimizeLevel(BddMan * p, std::vector<std::pair<int, int> > & ts, std::m
 }
 int BddMinimizeLevelTD(BddMan * p, int f, int g) {
   bool fverbose = 0;
-  std::set<std::pair<int, int> > fronts;
+  std::vector<std::pair<int, int> > fronts;
   std::map<std::pair<int, int>, std::pair<std::pair<int, int>, bool> > m;
   std::map<std::pair<int, int>, std::pair<std::pair<int, int>, std::pair<int, int> > > cs;
   std::vector<std::pair<int, int> > res;
   BddIncRef(p, f), BddIncRef(p, g);
   std::pair<int, int> root(f, g);
-  fronts.insert(root);
+  fronts.push_back(root);
   // minimize top down
   for(int i = 0; i < p->nVars; i++) {
     if(fverbose) std::cout << "level " << i << std::endl;
@@ -1316,8 +1316,8 @@ int BddMinimizeLevelTD(BddMan * p, int f, int g) {
       else ++it;
     }
     for(auto t : nfronts) {
-      if(fronts.count(t)) BddDecRef(p, t.first), BddDecRef(p, t.second);
-      else fronts.insert(t);
+      if(std::find(fronts.begin(), fronts.end(), t) != fronts.end()) BddDecRef(p, t.first), BddDecRef(p, t.second);
+      else fronts.push_back(t);
     }
     if(fverbose) {
       std::cout << "\ttargets " << targets.size() << std::endl;
@@ -1356,10 +1356,10 @@ int BddMinimizeLevelTD(BddMan * p, int f, int g) {
       t1 = std::make_pair(t1f, t1g);
       cs[t] = std::make_pair(t0, t1);
       assert(t0g != 1 || t1g != 1);
-      if(t0g != 1 && t0f != 0 && t0f != 1 && !fronts.count(t0))
-	fronts.insert(t0), BddIncRef(p, t0f), BddIncRef(p, t0g);
-      if(t1g != 1 && t1f != 0 && t1f != 1 && !fronts.count(t1))
-	fronts.insert(t1), BddIncRef(p, t1f), BddIncRef(p, t1g);
+      if(t0g != 1 && t0f != 0 && t0f != 1 && std::find(fronts.begin(), fronts.end(), t0) == fronts.end())
+	fronts.push_back(t0), BddIncRef(p, t0f), BddIncRef(p, t0g);
+      if(t1g != 1 && t1f != 0 && t1f != 1 && std::find(fronts.begin(), fronts.end(), t1) == fronts.end())
+	fronts.push_back(t1), BddIncRef(p, t1f), BddIncRef(p, t1g);
       res.push_back(t);
     }
   }
