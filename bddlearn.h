@@ -1269,8 +1269,8 @@ int BddMinimize4(BddMan * p, int f, int g, double maxinc = 1.1) {
    SideEffects []
    SeeAlso     []
 ***********************************************************************/
-void BddMinimizeLevel(BddMan * p, std::vector<std::pair<int, int> > & ts, std::map<std::pair<int, int>, std::pair<std::pair<int, int>, bool> > & m, double maxinc = 1.1) {
   bool fverbose = 0;
+void BddMinimizeLevel(BddMan * p, std::vector<std::pair<int, int> > & ts, std::map<std::pair<int, int>, std::pair<std::pair<int, int>, bool> > & m, double maxinc, int tdiff) {
   std::vector<std::pair<int, int> > tsold = ts;
   std::vector<int> c(ts.size());
   for(int i = 0; i < ts.size(); i++)
@@ -1312,9 +1312,9 @@ void BddMinimizeLevel(BddMan * p, std::vector<std::pair<int, int> > & ts, std::m
 	int nb = BddCountNodes(p, fb);
 	int nx = BddCountNodes(p, fx);
 	if(fverbose)
-	  std::cout << "\t\tbuf " << nb << " xor " << nx << " diff " << nx - nb << std::endl;
+	  std::cout << "\t\tbuf " << nb << " xor " << nx << " diff " << nx - nb << " prev " << prev << std::endl;
 	int f2, next;
-	if(nx + 100 < nb) f2 = fx, next = nx, bufmerge = 0;
+	if(nx + tdiff < nb) f2 = fx, next = nx, bufmerge = 0;
 	else f2 = fb, next = nb, xormerge = 0;
 	if(next < prev) {
 	  if(fverbose) {
@@ -1378,8 +1378,8 @@ void BddMinimizeLevel(BddMan * p, std::vector<std::pair<int, int> > & ts, std::m
   }
   ts = tsnew;
 }
-int BddMinimizeLevelTD(BddMan * p, int f, int g) {
   bool fverbose = 0;
+int BddMinimizeLevelTD(BddMan * p, int f, int g, double maxinc = 1.1, int tdiff = 100) {
   std::vector<std::pair<int, int> > fronts;
   std::map<std::pair<int, int>, std::pair<std::pair<int, int>, bool> > m;
   std::map<std::pair<int, int>, std::pair<std::pair<int, int>, std::pair<int, int> > > cs;
@@ -1402,7 +1402,9 @@ int BddMinimizeLevelTD(BddMan * p, int f, int g) {
         int t = BddAnd(p, BddElse(p, it->second), BddThen(p, it->second));
 	BddIncRef(p, t);
 	BddDecRef(p, it->second);
-	nfronts.push_back(std::make_pair(it->first, t));
+	auto nt = std::make_pair(it->first, t);
+	nfronts.push_back(nt);
+	m[*it] = std::make_pair(nt, 0);
 	it = fronts.erase(it);
       }
       else ++it;
@@ -1423,7 +1425,7 @@ int BddMinimizeLevelTD(BddMan * p, int f, int g) {
     // minimize the level
     if(targets.size() > 1) {
       if(fverbose) std::cout << "\tminimize" << std::endl;
-      BddMinimizeLevel(p, targets, m);
+      BddMinimizeLevel(p, targets, m, maxinc, tdiff);
     }
     if(fverbose) {
       std::cout << "\tres " << targets.size() << std::endl;
@@ -1517,8 +1519,17 @@ int BddMinimizeLevelTD(BddMan * p, int f, int g) {
     if(m[t].first == t) continue;
     BddDecRef(p, m[t].first.first), BddDecRef(p, m[t].first.second);
   }
-  if(m.count(root)) return LitNotCond(m[root].first.first, m[root].second);
-  return root.first;
+  bool c = 0;
+  while(m.count(root)) {
+    if(root == m[root].first) {
+      assert(!m[root].second);
+      break;
+    }
+    c ^= m[root].second;
+    root = m[root].first;
+  }
+  return LitNotCond(root.first, c);
+}
 
 /**Function*************************************************************
    Synopsis    [xor identify]
