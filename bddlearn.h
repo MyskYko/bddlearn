@@ -1519,6 +1519,94 @@ int BddMinimizeLevelTD(BddMan * p, int f, int g) {
   }
   if(m.count(root)) return LitNotCond(m[root].first.first, m[root].second);
   return root.first;
+
+/**Function*************************************************************
+   Synopsis    [xor identify]
+   Description []
+               
+   SideEffects []
+   SeeAlso     []
+***********************************************************************/
+int BddIdentifyXor(BddMan * p, int f, int g, std::vector<int> & vars, double maxinc = 1.1, int tdiff = 130, int n = 10) {
+  BddIncRef(p, f), BddIncRef(p, g);
+  while(1) {
+    while(BddLevel(p, f) > BddLevel(p, g)) {
+      int t;
+      t = BddAnd(p, BddElse(p, g), BddThen(p, g));
+      BddIncRef(p, t);
+      BddDecRef(p, g);
+      g = t;
+    }
+    if(f == 0 || f == 1) {
+      BddDecRef(p, f), BddDecRef(p, g);
+      return -1;
+    }
+    int fprev = f;
+    int gprev = g;
+    BddIncRef(p, fprev), BddIncRef(p, gprev);
+    bool success = 0;
+    vars.clear();
+    for(int i = 0; i < n; i++) {
+      while(BddLevel(p, f) > BddLevel(p, g)) {
+	int t;
+	t = BddAnd(p, BddElse(p, g), BddThen(p, g));
+	BddIncRef(p, t);
+	BddDecRef(p, g);
+	g = t;
+      }
+      int var = BddVar(p, f);
+      int f0, f1, g0, g1;
+      f0 = BddElse(p, f), f1 = BddThen(p, f);
+      if(var == BddVar(p, g)) g0 = BddElse(p, g), g1 = BddThen(p, g);
+      else g0 = g1 = g;
+      bool bufmerge = BddCheckIntersect(p, f0, g0, f1, g1);
+      bool xormerge = BddCheckIntersect(p, f0, g0, LitNot(f1), g1);
+      if(!bufmerge && i == 0) return -1;
+      if(!xormerge) break;
+      int f2, g2, count = 1000000000;
+      if(bufmerge) {
+	f2 = BddDCIntersect2(p, f0, g0, f1, g1);
+	count = BddCountNodes(p, f2);
+      }
+      f2 = BddDCIntersect2(p, f0, g0, LitNot(f1), g1);
+      //std::cout << "\t" << var << " buf " << count << " xor " << BddCountNodes(p, f2) << " org " << BddCountNodes(p, f0, f1) << std::endl;
+      if(BddCountNodes(p, f2) > BddCountNodes(p, f0, f1) * maxinc) break;
+      if(BddCountNodes(p, f2) + tdiff < count) {
+	// idea : success after diff is continuously (2-3 vars?) less than threshold
+	success = 1;
+	break;
+      }
+      BddIncRef(p, f2);
+      g2 = BddAnd(p, g0, g1);
+      BddIncRef(p, g2);
+      BddDecRef(p, f), BddDecRef(p, g);
+      f = f2, g = g2;
+      vars.push_back(var);
+    }
+    if(success) {
+      BddDecRef(p, f), BddDecRef(p, g);
+      BddDecRef(p, fprev), BddDecRef(p, gprev);
+      return f;
+    }
+    int f2, g2;
+    BddDecRef(p, f), BddDecRef(p, g);
+    f = fprev, g = gprev;
+    int var = BddVar(p, f);
+    int f0, f1, g0, g1;
+    f0 = BddElse(p, f), f1 = BddThen(p, f);
+    if(var == BddVar(p, g)) g0 = BddElse(p, g), g1 = BddThen(p, g);
+    else g0 = g1 = g;
+    f2 = BddDCIntersect2(p, f0, g0, f1, g1);
+    BddIncRef(p, f2);
+    g2 = BddAnd(p, g0, g1);
+    BddIncRef(p, g2);
+    BddDecRef(p, f), BddDecRef(p, g);
+    f = f2, g = g2;
+    if(f == 0 || f == 1) {
+      BddDecRef(p, f), BddDecRef(p, g);
+      return -1;
+    }
+  }
 }
 
 /**Function*************************************************************
