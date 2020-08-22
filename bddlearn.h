@@ -1355,8 +1355,8 @@ int BddMinimize5(BddMan * p, int f, int g, int depth = 0) {
    SideEffects []
    SeeAlso     []
 ***********************************************************************/
-  bool fverbose = 0;
 void BddMinimizeLevel(BddMan * p, std::vector<std::pair<int, int> > & ts, std::map<std::pair<int, int>, std::pair<std::pair<int, int>, bool> > & m, double maxinc, int tdiff) {
+  bool fverbose = 0;
   std::vector<std::pair<int, int> > tsold = ts;
   std::vector<int> c(ts.size());
   for(int i = 0; i < ts.size(); i++)
@@ -1464,8 +1464,8 @@ void BddMinimizeLevel(BddMan * p, std::vector<std::pair<int, int> > & ts, std::m
   }
   ts = tsnew;
 }
-  bool fverbose = 0;
 int BddMinimizeLevelTD(BddMan * p, int f, int g, double maxinc = 1.1, int tdiff = 100) {
+  bool fverbose = 0;
   std::vector<std::pair<int, int> > fronts;
   std::map<std::pair<int, int>, std::pair<std::pair<int, int>, bool> > m;
   std::map<std::pair<int, int>, std::pair<std::pair<int, int>, std::pair<int, int> > > cs;
