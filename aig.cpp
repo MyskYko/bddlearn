@@ -201,7 +201,7 @@ double aigman::eval(std::vector<boost::dynamic_bitset<> > const & inputs, std::v
       if(outputs[j][i] != outputs2[j][i]) neq[i] = 1;
     }
   }
-  return (double)neq.count() / npats;
+  return 1 - (double)neq.count() / npats;
 }
 
 void aigman::supportfanouts_rec(int i) {
