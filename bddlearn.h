@@ -1276,7 +1276,6 @@ int BddMinimize5(BddMan * p, int f, int g, int depth = 0) {
   if(g0 == 1) return BddMinimize5(p, f1, g1, depth);
   if(g1 == 1) return BddMinimize5(p, f0, g0, depth);
   // check if intersection exists
-  // TODO : high effort (also compare the direct case without buf/xor)
   // TODO : do more efficient search (ex. pruning)
   bool bm = BddCheckIntersect(p, f0, g0, f1, g1);
   bool xm = BddCheckIntersect(p, LitNot(f0), g0, f1, g1);
@@ -1346,6 +1345,99 @@ int BddMinimize5(BddMan * p, int f, int g, int depth = 0) {
     std::cout << "bra end var " << var << std::endl;
   }
   return r;
+}
+int BddMinimize6(BddMan * p, int f, int g, int depth = 0) {
+  int fverbose = 0;
+  // terminal (care set)
+  if(g == 0) return f;
+  assert(g != 1);
+  // top var
+  if(BddLevel(p, f) > BddLevel(p, g)) {
+    int t, r;
+    t = BddAnd(p, BddElse(p, g), BddThen(p, g));
+    BddIncRef(p, t);
+    r = BddMinimize6(p, f, t, depth);
+    BddDecRef(p, t);
+    return r;
+  }
+  int var = BddVar(p, f);
+  int f0, f1, g0, g1;
+  f0 = BddElse(p, f), f1 = BddThen(p, f);
+  if(var == BddVar(p, g)) g0 = BddElse(p, g), g1 = BddThen(p, g);
+  else g0 = g1 = g;
+  // only one case is cared
+  if(g0 == 1) return BddMinimize6(p, f1, g1, depth);
+  if(g1 == 1) return BddMinimize6(p, f0, g0, depth);
+  // check if intersection exists
+  // TODO : do more efficient search (ex. pruning)
+  bool bm = BddCheckIntersect(p, f0, g0, f1, g1);
+  bool xm = BddCheckIntersect(p, LitNot(f0), g0, f1, g1);
+  int br, xr;
+  if(fverbose) {
+    if(bm || xm) printf("%*s", depth, "");
+    if(bm && xm) std::cout << "comp buf var " << var << std::endl;
+    else if(bm) std::cout << "bmerge var " << var << std::endl;
+    else if(xm) std::cout << "xmerge var " << var << std::endl;
+  }
+  if(bm) {
+    int f2, g2, r;
+    f2 = BddDCIntersect2(p, f0, g0, f1, g1);
+    BddIncRef(p, f2);
+    g2 = BddAnd(p, g0, g1);
+    BddIncRef(p, g2);
+    r = BddMinimize6(p, f2, g2, depth + (bm && xm));
+    BddDecRef(p, f2), BddDecRef(p, g2);
+    br = r;
+    BddIncRef(p, br);
+  }
+  if(fverbose && bm && xm) {
+    printf("%*s", depth, "");
+    std::cout << "comp xor var " << var << std::endl;
+  }
+  if(xm) {
+    int f2, g2, t, r;
+    f2 = BddDCIntersect2(p, LitNot(f0), g0, f1, g1);
+    BddIncRef(p, f2);
+    g2 = BddAnd(p, g0, g1);
+    BddIncRef(p, g2);
+    t = BddMinimize6(p, f2, g2, depth + (bm && xm));
+    BddIncRef(p, t);
+    BddDecRef(p, f2), BddDecRef(p, g2);
+    r = BddUniqueCreate(p, var, t, LitNot(t));
+    BddDecRef(p, t);
+    xr = r;
+    BddIncRef(p, xr);
+  }
+  // recurse for each case
+  if(fverbose) {
+    printf("%*s", depth, "");
+    std::cout << "bra else var " << var << std::endl;
+  }
+  int r0, r1, r;
+  r0 = BddMinimize6(p, f0, g0, depth + 1);
+  BddIncRef(p, r0);
+  if(fverbose) {
+    printf("%*s", depth, "");
+    std::cout << "bra then var " << var << std::endl;
+  }
+  r1 = BddMinimize6(p, f1, g1, depth + 1);
+  BddIncRef(p, r1);
+  r = BddUniqueCreate(p, var, r1, r0);
+  BddDecRef(p, r0), BddDecRef(p, r1);
+  if(bm) BddDecRef(p, br);
+  if(xm) BddDecRef(p, xr);
+  int bc, xc, rc;
+  bc = xc = 1000000000;
+  if(bm) bc = BddCountNodes(p, br);
+  if(xm) xc = BddCountNodes(p, xr);
+  rc = BddCountNodes(p, r);
+  if(fverbose) {
+    printf("%*s", depth, "");
+    std::cout << "comp end var " << var << " bm " << bc << " xm " << xc << " org " << rc << std::endl;
+  }
+  if(rc < xc && rc < bc) return r;
+  if(xc < bc) return xr;
+  return br;
 }
 
 /**Function*************************************************************
