@@ -1,25 +1,31 @@
 #include <iostream>
+#include <cstring>
 
 #include "pla.h"
 #include "bddlearn.h"
 
 int main(int argc, char** argv) {
   if(argc < 3) {
-    std::cerr << "usage : lnet <pla> <pla2> ... <output>" << std::endl;
+    std::cerr << "usage : lnet [-r] <pla> <pla2> ... <output>" << std::endl;
     return 1;
   }
 
   std::string outname = argv[argc - 1];
-
+  bool reo = 0;
+  
   // read pla files
   std::vector<boost::dynamic_bitset<> > inputs;
   std::vector<boost::dynamic_bitset<> > outputs;
   for(int i = 1; i < argc - 1; i++) {
+    if(strcmp(argv[i], "-r") == 0) {
+	reo = 1;
+	continue;
+      }
     pla2pat(argv[i], inputs, outputs);
   }
 
   // separate evaluation sets
-  double ratio = 1;
+  double ratio = 0.5;
   std::vector<boost::dynamic_bitset<> > traininputs;
   std::vector<boost::dynamic_bitset<> > trainoutputs;
   std::vector<boost::dynamic_bitset<> > evalinputs(inputs.size());
@@ -43,8 +49,12 @@ int main(int argc, char** argv) {
     }
   }
 
-  bddlearn(traininputs, trainoutputs[0], outname, 0);
-  bddlearn(traininputs, trainoutputs[0], outname, 1);
+  bddlearn(traininputs, trainoutputs[0], outname, reo, evalinputs, evaloutputs[0]);
+
+  aigman aig;
+  aig.read(outname);
+  std::cout << "tran " << aig.eval(traininputs, trainoutputs) << std::endl;
+  std::cout << "eval " << aig.eval(evalinputs, evaloutputs) << std::endl;
   
   return 0;
 }

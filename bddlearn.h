@@ -1806,7 +1806,13 @@ int BddIdentifyXor(BddMan * p, int f, int g, std::vector<int> & vars, double max
    SideEffects []
    SeeAlso     []
 ***********************************************************************/
-void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynamic_bitset<> const & output, std::string aigname, bool reo) {
+void show_result(BddMan * p, int ninputs, int onset, int offset, int x, std::string name, std::vector<boost::dynamic_bitset<> > const & einputs, boost::dynamic_bitset<> const & eoutput) {
+  std::cout << name << " : " << BddCountNodes(p, x);
+  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
+  {aigman * aig = GenAig(p, x, ninputs); std::cout << " " << aig->eval(einputs, eoutput); delete aig;}
+  std::cout << std::endl;
+}
+void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynamic_bitset<> const & output, std::string aigname, bool reo, std::vector<boost::dynamic_bitset<> > const & einputs, boost::dynamic_bitset<> const & eoutput) {
   int ninputs = inputs.size();
   BddMan * p = BddManAlloc(ninputs + 1, 25);
 
@@ -1912,45 +1918,28 @@ void bddlearn(std::vector<boost::dynamic_bitset<> > const & inputs, boost::dynam
   BddIncRef(p, careset);
 
   x = BddSqueeze(p, onset, LitNot(offset), 0);
-  std::cout << "squeeze : " << BddCountNodes(p, x) << std::endl;
-  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
+  show_result(p, ninputs, onset, offset, x, "squeeze", einputs, eoutput);
   
   x = BddSqueeze(p, onset, LitNot(offset), 1);
-  std::cout << "squeeze inter : " << BddCountNodes(p, x) << std::endl;
-  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
+  show_result(p, ninputs, onset, offset, x, "squeeze inter", einputs, eoutput);
   
-  x = BddRestrict(p, onset, careset);
-  std::cout << "restrict : " << BddCountNodes(p, x) << std::endl;
-  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
+  x = BddMinimize3(p, onset, LitNot(careset), 0);
+  show_result(p, ninputs, onset, offset, x, "minim", einputs, eoutput);
+
+  x = BddMinimize3(p, onset, LitNot(careset), 1);
+  show_result(p, ninputs, onset, offset, x, "minim inter", einputs, eoutput);
 
   x = BddMinimize3(p, onset, LitNot(careset), 0);
-  std::cout << "minimize : " << BddCountNodes(p, x) << std::endl;
-  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
-  
-  x = BddMinimize3(p, onset, LitNot(careset), 1);
-  std::cout << "minimize inter : " << BddCountNodes(p, x) << std::endl;
-  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
-  
+  x = BddMinimizeLevelTD(p, x, LitNot(careset), 100, 1000000000);
+  show_result(p, ninputs, onset, offset, x, "bmin", einputs, eoutput);
+
   x = BddMinimize3(p, onset, LitNot(careset), 0);
-  std::cout << "minimize : " << BddCountNodes(p, x) << std::endl;
-  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
-  BddIncRef(p, x);
-  {
-    int t = BddMinimize4(p, x, LitNot(careset));
-    BddDecRef(p, x);
-    x = t;
-  }
-  std::cout << "minimize comp: " << BddCountNodes(p, x) << std::endl;
-  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
-  
-  x = BddMinimizeLevelTD(p, onset, LitNot(careset));
-  std::cout << "bminimize : " << BddCountNodes(p, x) << std::endl;
-  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
-  
+  x = BddMinimizeLevelTD(p, x, LitNot(careset), 1.1, 1000000000);
+  show_result(p, ninputs, onset, offset, x, "bmin thold", einputs, eoutput);
+
   x = BddMinimize3(p, onset, LitNot(careset), 0);
   x = BddMinimizeLevelTD(p, x, LitNot(careset));
-  std::cout << "bmin with pre : " << BddCountNodes(p, x) << std::endl;
-  BddIncRef(p, x), assert(BddOr(p, BddAnd(p, onset, LitNot(x)), BddAnd(p, offset, x)) == 0), BddDecRef(p, x);
+  show_result(p, ninputs, onset, offset, x, "bmin thold xdiff", einputs, eoutput);
 
   // write output;
   aigman * aig = GenAig(p, x, ninputs);
