@@ -1254,7 +1254,7 @@ int BddMinimize4(BddMan * p, int f, int g, double maxinc = 1.1) {
   return r;
 }
 int BddMinimize5(BddMan * p, int f, int g, int depth = 0) {
-  int fverbose = 1;
+  int fverbose = 0;
   // terminal (care set)
   if(g == 0) return f;
   assert(g != 1);
@@ -1475,6 +1475,7 @@ void BddMinimizeLevel(BddMan * p, std::vector<std::pair<int, int> > & ts, std::m
     }
   }
   // compare two (intersect)
+  // TODO : merge in the order of gain
   for(int i = 0; i < ts.size() - 1; i++) {
     if(abs(c[i]) <= i) continue;
     for(int j = i + 1; j < ts.size(); j++) {
